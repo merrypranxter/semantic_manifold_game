@@ -18,6 +18,8 @@ dist/
 
 # app-builder internals
 .grok/
+!.grok/
+!.grok/app-env.json
 artifacts/
 attachments/
 screenshots/
