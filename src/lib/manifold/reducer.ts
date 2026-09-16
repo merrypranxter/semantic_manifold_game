@@ -1,4 +1,5 @@
 import { uid } from "./ids";
+import { deriveMutationDiff } from "../suno/diff.ts";
 import type { Delta, LedgerEvent, MetricId, OperatorId, OrganismState, Trait } from "./types";
 
 function bumpRecency(traits: Trait[]): Trait[] {
@@ -8,6 +9,9 @@ function bumpRecency(traits: Trait[]): Trait[] {
 export function hydrateOrganism(state: OrganismState): OrganismState {
   return {
     ...state,
+    seedId: state.seedId ?? "legacy",
+    generation: state.generation ?? state.version ?? 0,
+    phoneticRules: state.phoneticRules ?? [],
     installedMind: state.installedMind ?? null,
     mindHistory: state.mindHistory ?? [],
     retiredMetrics: state.retiredMetrics ?? [],
@@ -26,6 +30,7 @@ export function applyDelta(
     ...src,
     id: uid("st"),
     version: src.version + 1,
+    generation: src.generation + 1,
     traits: bumpRecency(src.traits.map((t) => ({ ...t }))),
     invariants: src.invariants.map((i) => ({ ...i })),
     scars: [...src.scars],
@@ -34,6 +39,7 @@ export function applyDelta(
     interpretations: [...src.interpretations],
     debris: [...src.debris],
     ancestry: [...src.ancestry, src.id],
+    phoneticRules: src.phoneticRules.map((rule) => ({ ...rule })),
     lastOperator: delta.operator,
     lastTargetId: delta.targetId,
     lastWaypointId: delta.waypointId,
@@ -67,7 +73,8 @@ export function applyDelta(
               }
             : t,
         );
-        mutated.push(op.name ?? op.traitId);
+        const changed = next.traits.find((t) => t.id === op.traitId);
+        mutated.push(changed?.name ?? op.name ?? op.traitId);
         break;
       }
       case "SUPPRESS":
@@ -133,6 +140,8 @@ export function applyDelta(
   }
   if (next.memories.length > 24) next.memories = next.memories.slice(-24);
   if (next.debris.length > 16) next.debris = next.debris.slice(-16);
+
+  next.lastMutationDiff = deriveMutationDiff(src, next);
 
   const event: LedgerEvent = {
     id: uid("ev"),
