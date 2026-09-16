@@ -6,21 +6,25 @@ This file is the running implementation record for the image/video branch. It is
 
 ## Job 1 — Domain abstraction layer
 
-Status: implemented on this branch.
+Status: implemented on this branch; targeted verification completed. Full repo build remains for a connected dev/deploy environment.
 
 ### Goal
 
-Separate the persistent manifold engine from the medium-specific music/Suno shell without changing the current user-facing music behavior. The branch now has a domain boundary that later jobs can populate with image and video behavior.
+Separate the persistent manifold engine from the medium-specific music/Suno shell without changing the current user-facing music behavior. The branch now has a domain boundary that later jobs can populate with visual behavior.
+
+Image and video are deliberately **not** separate evolutionary organisms. They are two compile/output modes of one future `visual` domain, so the same prompt lineage can be rendered as a still-image prompt or a temporal/video prompt without throwing away its ancestry.
 
 ### Added
 
 - `src/lib/domain/types.ts`
-  - `DomainId`: `music | image | video`
+  - `DomainId`: `music | visual`
+  - `CompileKind`: `music | image | video`
   - generic compile-output sections
   - `DomainProfile` contract for origins, compilers, jurisdictions, hints, and default metric
 - `src/lib/domain/registry-core.ts`
   - small domain resolver with a safe fallback
 - `src/lib/domain/registry-core.test.ts`
+  - asserts the single-visual-domain / dual-output contract
   - tests requested-domain resolution, fallback behavior, and missing-registry failure
 - `src/lib/domain/registry.ts`
   - registry entry point; only the music profile is installed during Job 1
@@ -58,12 +62,14 @@ Separate the persistent manifold engine from the medium-specific music/Suno shel
 
 ### Verification performed
 
-- Test-first red/green cycle for the domain resolver was executed separately before implementation.
-- The exact domain resolver/test pair was re-run after implementation: 3 tests passed, 0 failed.
-- GitHub branch comparison confirms this branch is isolated from `main` and currently changes only the domain-abstraction/test surfaces listed above.
+- Test-first type-contract check: `visual` correctly failed against the old `music | image | video` domain union before the architecture was changed.
+- After the change, a local TypeScript contract check accepted `DomainId = visual` plus `CompileKind = image | video`.
+- The exact domain resolver/test logic was re-run after implementation: **4 tests passed, 0 failed**.
+- GitHub branch comparison confirms this branch is isolated from `main` and contains only this branch's domain-abstraction/test/worklog changes.
+- The repository has no GitHub Actions workflow/status checks to use as a remote build gate.
 
-A full repository build/typecheck cannot be executed from this chat runtime because the runtime cannot resolve/download the repository dependencies from GitHub. The branch therefore records targeted executable verification here and should receive a normal `npm test`, `npm run typecheck`, and `npm run build` in a connected dev/deploy environment before merge.
+A full repository `npm test`, `npm run typecheck`, and `npm run build` cannot be executed from this chat runtime because its shell has no network access to clone/install the repository and dependencies. Do not treat targeted verification as a substitute for that final build gate before merge/deploy.
 
 ## Next
 
-Job 2: define the visual domain schema — image/video jurisdictions, visual feature meanings, prompt-specimen origin model, and temporal failure surfaces — without yet building the full prompt decompiler.
+Job 2: define the **visual domain schema** — shared image/video jurisdictions, visual feature meanings, prompt-specimen origin model, and temporal failure surfaces — without yet building the full prompt decompiler.
