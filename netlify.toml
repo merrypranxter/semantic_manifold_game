@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Nitro's Netlify preset writes the server bundle to
+# .netlify/functions-internal and its public output to dist/.
+# Netlify consumes both during the same build.

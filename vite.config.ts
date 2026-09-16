@@ -170,7 +170,10 @@ export default defineConfig(({ command, isPreview }) => ({
     ...(command === "build" || isPreview
       ? [
           nitro({
-            preset: "vercel",
+            // This repo was scaffolded for Vercel, but the production host is
+            // Netlify. The wrong preset produces provider-specific output that
+            // Netlify cannot deploy correctly.
+            preset: "netlify",
             // Auto-registers server/middleware/* (the PWA install page +
             // manifest + head-tag middleware). Nitro v3 defaults serverDir to
             // false, so removing this silently unwires /?install=1 on deploys.
