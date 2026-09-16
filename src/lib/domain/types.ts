@@ -1,6 +1,10 @@
 import type { MetricId, OrganismState } from "../manifold/types.ts";
 
-export type DomainId = "music" | "image" | "video";
+/** Broad evolutionary medium. Image and video share one visual organism. */
+export type DomainId = "music" | "visual";
+
+/** Concrete artifact produced by a domain compiler. */
+export type CompileKind = "music" | "image" | "video";
 
 export type CompileSection = {
   id: string;
@@ -11,7 +15,7 @@ export type CompileSection = {
 };
 
 export type DomainCompileOutput = {
-  kind: DomainId;
+  kind: CompileKind;
   title: string;
   description: string;
   sections: CompileSection[];
