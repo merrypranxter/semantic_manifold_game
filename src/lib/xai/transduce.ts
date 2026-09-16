@@ -152,6 +152,12 @@ function coerceConcept(label: string, raw: unknown): Concept | undefined {
   };
 }
 
+function boundedMaxTokens(): number {
+  const requested = Number(process.env.XAI_MAX_TOKENS ?? "550");
+  if (!Number.isFinite(requested)) return 550;
+  return Math.max(256, Math.min(700, Math.round(requested)));
+}
+
 export const transduceConcept = createServerFn({ method: "POST" })
   .validator((input: TransduceInput) => input)
   .handler(async ({ data }): Promise<TransduceOk | TransduceErr> => {
@@ -160,25 +166,24 @@ export const transduceConcept = createServerFn({ method: "POST" })
       return { ok: true, concept: fallbackConcept(data.label), readings: ["local-uncertain"] };
     }
 
+    // Keep the expensive repeated prefix compact. The full temporary-mind data
+    // still lives client-side; the transducer only needs the operative core.
     const mindBlock = data.mind
-      ? `
-
-TEMPORARY COGNITIVE INSTALLATION: ${data.mind.full}
-This is a hidden generative constraint. Do not explain it. Do not name the procedure.
-${data.mind.transduce}
-${data.mind.procedure.map((s, i) => `${i + 1}. ${s}`).join("\n")}
-Donations must fail the validation tests in that procedure.`
+      ? `\n\nTEMPORARY COGNITIVE INSTALLATION: ${data.mind.full.slice(0, 160)}\nThis is a hidden generative constraint. Do not explain it. Do not name the procedure.\n${data.mind.transduce.slice(0, 700)}\n${data.mind.procedure
+          .slice(0, 5)
+          .map((s, i) => `${i + 1}. ${s.slice(0, 220)}`)
+          .join("\n")}\nDonations must fail the validation tests in that procedure.`
       : "";
 
     const system = `You transduce a concept into OPERATIONAL STRUCTURE for a creative navigation instrument.
 Forbidden: aesthetic adjectives, genre names, "sounds like", theme-smoothie, keyword soup.
 Ask what the concept DOES as a mechanism: physics, procedure, failure, memory, topology.
-The current organism is "${data.organismName}": ${data.organismIdentity}
+The current organism is "${data.organismName.slice(0, 100)}": ${data.organismIdentity.slice(0, 320)}
 You will donate 2-4 traits that can REWRITE existing musical/structural behavior. Prefer transforming what exists over adding new instruments.
 Do not include the source word in trait rules (source-word-removal test).
 Return JSON only.${mindBlock}`;
 
-    const user = `Concept: ${data.label}
+    const user = `Concept: ${data.label.slice(0, 120)}
 
 JSON shape:
 {
@@ -194,21 +199,27 @@ JSON shape:
   "features": { "semanticX": -1..1, "semanticY": -1..1, "structure": 0-1, "failure": 0-1, "memory": 0-1, "temporal": 0-1, "topology": 0-1, "energy": 0-1 }
 }`;
 
+    const model = process.env.XAI_MODEL?.trim() || "grok-4.20-0309-non-reasoning";
+
     try {
       const res = await fetch("https://api.x.ai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
+          // xAI recommends a stable conversation/cache key so repeated prompt
+          // prefixes are more likely to hit prompt cache instead of billing cold.
+          "x-grok-conv-id": "semantic-manifold-transducer-v1",
         },
+        signal: AbortSignal.timeout(12_000),
         body: JSON.stringify({
-          model: "grok-4.5",
+          model,
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },
           ],
-          temperature: 0.7,
-          max_tokens: 900,
+          temperature: 0.65,
+          max_tokens: boundedMaxTokens(),
           response_format: { type: "json_object" },
         }),
       });
