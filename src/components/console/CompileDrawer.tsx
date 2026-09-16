@@ -2,12 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Check, Copy, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  CAPTION_MAX,
-  LYRICS_MAX,
-  STYLE_MAX,
-} from "@/lib/manifold/types";
-import type { CompileBoxes } from "@/lib/manifold/compiler";
+import type { DomainCompileOutput } from "@/lib/domain/types";
 import { cn } from "@/lib/utils";
 
 export function CompileDrawer({
@@ -16,7 +11,7 @@ export function CompileDrawer({
   onClose,
 }: {
   open: boolean;
-  boxes: CompileBoxes | null;
+  boxes: DomainCompileOutput | null;
   onClose: () => void;
 }) {
   return (
@@ -27,11 +22,10 @@ export function CompileDrawer({
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <Dialog.Title className="font-display text-2xl italic text-fg">
-                Compile to Suno
+                {boxes?.title ?? "Compile"}
               </Dialog.Title>
               <Dialog.Description className="mt-1 text-sm text-muted">
-                Three boxes. Character counts are the app's, not the model's.
-                Rules over adjectives. History is not dumped.
+                {boxes?.description ?? "Nothing to compile yet."}
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
@@ -47,9 +41,15 @@ export function CompileDrawer({
                   {w}
                 </p>
               ))}
-              <Box label="Style" text={boxes.style} count={boxes.styleCount} max={STYLE_MAX} />
-              <Box label="Lyrics / Control" text={boxes.lyrics} count={boxes.lyricsCount} max={LYRICS_MAX} />
-              <Box label="Caption" text={boxes.caption} count={boxes.captionCount} max={CAPTION_MAX} />
+              {boxes.sections.map((section) => (
+                <Box
+                  key={section.id}
+                  label={section.label}
+                  text={section.text}
+                  count={section.count}
+                  max={section.max}
+                />
+              ))}
             </div>
           ) : (
             <p className="text-sm text-muted">Nothing to compile.</p>
@@ -69,17 +69,17 @@ function Box({
   label: string;
   text: string;
   count: number;
-  max: number;
+  max?: number;
 }) {
   const [copied, setCopied] = useState(false);
-  const over = count > max;
+  const over = typeof max === "number" && count > max;
   return (
     <section className="rounded-xl bg-elevated p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-[10px] uppercase tracking-[0.16em] text-muted">{label}</h3>
         <div className="flex items-center gap-2">
           <span className={cn("font-mono text-[11px] tabular-nums", over ? "text-danger" : "text-muted")}>
-            {count}/{max}
+            {typeof max === "number" ? `${count}/${max}` : count}
           </span>
           <Button
             variant="outline"
