@@ -144,6 +144,13 @@ export type Interpretation = {
   reading: string;
 };
 
+export type OrganismProvenance = {
+  source: "generated" | "prompt";
+  domain?: string;
+  outputKind?: string;
+  raw?: string;
+};
+
 export type OrganismState = {
   id: string;
   version: number;
@@ -169,6 +176,7 @@ export type OrganismState = {
   installedMind?: string | null;
   mindHistory: string[];
   retiredMetrics: MetricId[];
+  provenance?: OrganismProvenance;
 };
 
 export type Donation = {
