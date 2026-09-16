@@ -145,6 +145,94 @@ These are defined as operational failure surfaces rather than aesthetic styles s
 - no UI changes yet
 - no changes to operators/minds/metrics yet
 
+## Job 3 — Prompt Decompiler
+
+Status: implemented on this branch; targeted RED/GREEN verification completed.
+
+### Goal
+
+Turn a pasted image or video prompt into generation zero of the visual organism without replacing the source prompt with a model rewrite. The decompiler preserves the exact original text, extracts only source-supported operational rules, and converts those rules into manifold traits/invariants/features that later operators can mutate.
+
+### Added
+
+- `src/lib/domain/visual-decompiler-core.ts`
+  - validates and normalizes decompiler output against the Job 2 visual schema
+  - rejects unsupported or output-inappropriate jurisdictions instead of silently inventing new ones
+  - clamps confidence, mutability, and feature values into valid ranges
+  - deduplicates identity anchors and invariants
+  - creates a decompiled `VisualSpecimen`
+  - converts decompiled clauses into generation-zero manifold traits
+  - converts explicit source preservation constraints into absolute invariants
+  - derives a visual feature vector when the model omits feature values
+  - preserves the raw source prompt and output kind in organism provenance
+  - includes a local low-cost fallback parser for identity, camera, topology, material, degradation, medium, anatomy, biological process, color, transformation, and temporal cues
+- `src/lib/domain/visual-decompiler-core.test.ts`
+  - verifies unsupported jurisdictions are dropped rather than admitted
+  - verifies image mode rejects video-only temporal laws
+  - verifies video mode accepts temporal identity and starts with temporal pressure
+  - verifies confidence/mutability/features are bounded
+  - verifies duplicate anchors/invariants collapse cleanly
+  - verifies generation-zero traits/invariants/provenance are created correctly
+  - verifies local fallback extraction across identity/camera/material/topology/degradation
+- `src/lib/xai/decompile-visual.ts`
+  - one user-initiated xAI call per prompt ingestion, not one call per clause
+  - extraction-only system prompt: no rewriting, optimizing, embellishing, or adding unsupported content
+  - dynamically supplies only jurisdictions legal for the selected image/video output
+  - asks for 4–12 operational clauses when justified by the source
+  - uses low temperature (`0.15`) because this phase is decompilation, not creative mutation
+  - caps prompt specimens at 8,000 characters
+  - bounds output tokens with `XAI_DECOMPILE_MAX_TOKENS` (default 900, hard range 512–1400)
+  - uses a stable xAI conversation/cache key
+  - falls back locally on missing key, HTTP failure, timeout, invalid JSON, or unusable model output
+- `src/lib/manifold/types.ts`
+  - optional `OrganismProvenance` now preserves source type/domain/output/raw prompt and naturally survives later deltas because organism mutations already spread the prior state
+- `package.json`
+  - normal test command now includes the prompt decompiler core tests
+
+### Decompilation contract
+
+The model is explicitly **not** asked to improve the prompt. It receives the source prompt and legal jurisdiction vocabulary, then returns:
+
+- persistent identity sentence
+- identity anchors
+- explicit invariants
+- operational clauses with jurisdiction, role, confidence, and mutability
+- feature estimates
+
+The normalizer is authoritative. Model output cannot introduce a made-up jurisdiction or slip video-only temporal clauses into an image specimen.
+
+### Generation zero
+
+`visualSpecimenToOrigin()` turns decompiled clauses into the first real manifold state:
+
+- anchors receive high persistence and low mutability
+- ordinary mechanisms/constraints remain mutable
+- explicit source preservation requirements become `ABSOLUTE` invariants
+- the raw input prompt is retained in `provenance.raw`
+- `version = 0`, no scars/debris/history yet
+- uncertainty is lower for AI decompilation and deliberately higher for the local fallback parser
+
+This means later descendants can mutate aggressively while the app can still identify exactly what the original prompt said versus what the manifold introduced later.
+
+### Cost behavior
+
+Prompt ingestion is intentionally one bounded model call. The returned structure is cached only by the app/session mechanisms available later; Job 3 itself does not add repeated model calls. If the API is unavailable, the local parser still produces a usable but higher-uncertainty origin instead of blocking the instrument.
+
+### Verification performed
+
+- RED: local mirror tests were first run against stub functions that threw `not implemented`; **4 tests failed for the intended missing behavior**.
+- GREEN: after implementing the core, the exact behavioral test set passed: **4 passed, 0 failed**.
+- The server/API wrapper is intentionally not network-tested here because this runtime cannot call xAI or install the full application dependency graph.
+- Full-repository `npm test`, `npm run typecheck`, and `npm run build` remain required in a connected dev/deploy environment before merge/deploy.
+
+### Deliberately deferred
+
+- the visual domain is still not the active runtime profile
+- no image/video compiler yet
+- no concept transducer retargeting yet
+- no UI prompt-ingest box yet
+- no branch/restore visual UI changes yet
+
 ## Next
 
-Job 3: build the **Prompt Decompiler**. It will ingest a real user prompt, preserve the untouched original specimen, extract load-bearing visual clauses/anchors/invariants into the new schema, and construct the first visual `OrganismState` without turning the prompt into keyword soup.
+Job 4: retarget **concept transduction** for the visual organism. Unknown destinations should donate operations against anatomy, topology, material, camera, identity, continuity, causality, and the known failure surfaces instead of donating musical traits.
