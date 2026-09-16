@@ -9,6 +9,13 @@ export type PromptFragment = {
 
 type WorkingFragment = PromptFragment & { originalIndex: number; removed?: boolean; compacted?: boolean };
 
+type Expansion = {
+  id: string;
+  text: string;
+  priority: number;
+  sourceIndex: number;
+};
+
 function joinFragments(items: WorkingFragment[], separator: string): string {
   return items
     .filter((item) => !item.removed && item.text.trim())
@@ -16,6 +23,34 @@ function joinFragments(items: WorkingFragment[], separator: string): string {
     .map((item) => item.text.trim())
     .join(separator)
     .trim();
+}
+
+function chooseExpansionSubset(
+  expansions: Expansion[],
+  minGain: number,
+  maxGain: number,
+  separatorLength: number,
+): Expansion[] | null {
+  if (minGain <= 0) return [];
+  const paths = new Map<number, number[]>();
+  paths.set(0, []);
+
+  for (let i = 0; i < expansions.length; i += 1) {
+    const exp = expansions[i]!;
+    const cost = exp.text.length + separatorLength;
+    const snapshot = [...paths.entries()].sort((a, b) => b[0] - a[0]);
+    for (const [sum, path] of snapshot) {
+      const next = sum + cost;
+      if (next > maxGain || paths.has(next)) continue;
+      paths.set(next, [...path, i]);
+    }
+  }
+
+  for (let gain = minGain; gain <= maxGain; gain += 1) {
+    const path = paths.get(gain);
+    if (path) return path.map((index) => expansions[index]!);
+  }
+  return null;
 }
 
 export function fitPromptBudget(
@@ -58,13 +93,15 @@ export function fitPromptBudget(
   }
 
   if (text.length < min) {
-    const expansions = fragments.flatMap((fragment, index) =>
-      (fragment.expand ?? []).map((expansion, expansionIndex) => ({
-        id: `${fragment.id}:expand:${expansionIndex}`,
-        text: expansion.trim(),
-        priority: fragment.priority,
-        sourceIndex: index,
-      })),
+    const expansions: Expansion[] = fragments.flatMap((fragment, index) =>
+      (fragment.expand ?? [])
+        .map((expansion, expansionIndex) => ({
+          id: `${fragment.id}:expand:${expansionIndex}`,
+          text: expansion.trim(),
+          priority: fragment.priority,
+          sourceIndex: index,
+        }))
+        .filter((expansion) => expansion.text.length > 0),
     );
 
     expansions.sort(
@@ -74,20 +111,18 @@ export function fitPromptBudget(
         a.id.localeCompare(b.id),
     );
 
-    const appended: string[] = [];
-    for (const expansion of expansions) {
-      const candidate = [text, ...appended, expansion.text].filter(Boolean).join(separator).trim();
-      if (candidate.length <= max) {
-        appended.push(expansion.text);
-        if (candidate.length >= min) {
-          text = candidate;
-          break;
-        }
-      }
-    }
-
-    if (text.length < min && appended.length) {
-      text = [text, ...appended].filter(Boolean).join(separator).trim();
+    const separatorCost = text.length ? separator.length : 0;
+    const subset = chooseExpansionSubset(
+      expansions,
+      min - text.length,
+      max - text.length,
+      separatorCost,
+    );
+    if (subset) {
+      text = [text, ...subset.map((expansion) => expansion.text)]
+        .filter(Boolean)
+        .join(separator)
+        .trim();
     }
   }
 
