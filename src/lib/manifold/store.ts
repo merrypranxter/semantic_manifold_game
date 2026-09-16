@@ -44,6 +44,7 @@ type ManifoldStore = {
   setMetric: (m: MetricId) => void;
   setDraft: (s: string) => void;
   setSelectedConcept: (id: string | null) => void;
+  plant: (concept: Concept) => void;
   begin: () => void;
   reset: () => void;
   previewCommand: (raw?: string) => CommandProposal | null;
@@ -74,7 +75,7 @@ function emptyRun() {
     compileOpen: false,
     busy: false,
     error: null as string | null,
-    hint: "Begin as a pulse, then take it somewhere. Try: take this via déjà vu",
+    hint: "Begin as a pulse. Zoom the field. Type a word. Go there.",
     hydrated: false,
   };
 }
@@ -106,6 +107,22 @@ export const useManifold = create<ManifoldStore>()(
       setDraft: (s) => set({ draft: s, error: null }),
       setSelectedConcept: (id) => set({ selectedConceptId: id }),
 
+      plant: (concept) => {
+        const known = getConcept(concept.id) ?? get().customConcepts.find((c) => c.id === concept.id);
+        if (known) {
+          set({
+            selectedConceptId: known.id,
+            hint: `${known.label} is already in the field.`,
+          });
+          return;
+        }
+        set({
+          customConcepts: [...get().customConcepts, concept],
+          selectedConceptId: concept.id,
+          hint: `Planted ${concept.label}. Travel there to make it work on the organism.`,
+        });
+      },
+
       current: () => {
         const { currentId, states } = get();
         if (!currentId) return null;
@@ -126,7 +143,7 @@ export const useManifold = create<ManifoldStore>()(
           pending: null,
           draft: "",
           error: null,
-          hint: "Try: take this via déjà vu",
+          hint: "Zoom in. Drag or WASD to drift. Find a word — any word — and go there.",
           view: "PLAY",
           metric: "SEMANTIC",
         });

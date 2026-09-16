@@ -23,6 +23,7 @@ const JURISDICTIONS: Jurisdiction[] = [
   "performance",
   "spatial",
   "structure",
+  "memory",
 ];
 
 type TransduceInput = {
@@ -169,7 +170,7 @@ JSON shape:
   "whatItDoes": "one selected operational reading, 1-2 sentences",
   "clicheForbidden": ["phrases that would be a cheap aesthetic reading"],
   "donations": [
-    { "jurisdiction": "one of time|meter|rhythm|pulse|pitch|harmony|melody|texture|timbre|instrumentation|vocal|articulation|dynamics|production|form|motif|repetition|performance|spatial|structure", "name": "short name", "rule": "rule-over-adjective, no source word", "rewrite": "how this rewrites an existing trait in that jurisdiction" }
+    { "jurisdiction": "one of time|meter|rhythm|pulse|pitch|harmony|melody|texture|timbre|instrumentation|vocal|articulation|dynamics|production|form|motif|repetition|performance|spatial|structure|memory", "name": "short name", "rule": "rule-over-adjective, no source word", "rewrite": "how this rewrites an existing trait in that jurisdiction" }
   ],
   "failureMode": "how this region collapses",
   "fracturePlane": "jurisdiction that breaks first",

@@ -48,7 +48,8 @@ export type Jurisdiction =
   | "repetition"
   | "performance"
   | "spatial"
-  | "structure";
+  | "structure"
+  | "memory";
 
 export type InvariantLevel = "SOFT" | "STRONG" | "ABSOLUTE";
 
@@ -179,6 +180,7 @@ export type Concept = {
   fracturePlane: Jurisdiction;
   mass: number;
   seeded: boolean;
+  family?: string;
 };
 
 export type CommandProposal = {

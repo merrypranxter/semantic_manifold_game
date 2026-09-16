@@ -29,9 +29,10 @@ export function StartScreen({
         </p>
         <p className="mt-5 max-w-prose text-sm leading-relaxed text-muted">
           This is not a blender and not a prompt box. You move a persistent
-          organism through conceptual space. The route, the ruler, and the
-          wreckage are part of the artwork. Suno is just the first synthesizer
-          plugged into it.
+          organism through conceptual space. The field holds thousands of
+          regions — ordinary, rare, and previously unnamed. Zoom in, drift,
+          type a word. The route, the ruler, and the wreckage are the artwork.
+          Suno is just the first synthesizer plugged into it.
         </p>
         <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button size="lg" onClick={onBegin} className="min-h-12">

@@ -10,7 +10,9 @@ import { RouteRecipe } from "./RouteRecipe";
 import { RulerSelector } from "./RulerSelector";
 import { SpecDrawer } from "./SpecDrawer";
 import { StartScreen } from "./StartScreen";
-import { allConcepts } from "@/lib/manifold/concepts";
+import { WordFinder } from "./WordFinder";
+import { allConcepts, findConcept } from "@/lib/manifold/concepts";
+import { inflateWord } from "@/lib/manifold/lexicon";
 import { wtfNeighbor } from "@/lib/manifold/metrics";
 import { useManifold } from "@/lib/manifold/store";
 import { cn } from "@/lib/utils";
@@ -18,6 +20,8 @@ import { cn } from "@/lib/utils";
 export function ManifoldApp() {
   const [tab, setTab] = useState<"map" | "state">("map");
   const [specOpen, setSpecOpen] = useState(false);
+  const [flyToId, setFlyToId] = useState<string | null>(null);
+  const [flyToken, setFlyToken] = useState(0);
 
   const started = useManifold((s) => s.started);
   const view = useManifold((s) => s.view);
@@ -43,7 +47,10 @@ export function ManifoldApp() {
   const concepts = useMemo(() => allConcepts(customConcepts), [customConcepts]);
   const selected = concepts.find((c) => c.id === selectedConceptId);
   const lastEvent = ledger[ledger.length - 1];
-  const wtf = state ? wtfNeighbor(state, concepts, metric) : undefined;
+  const wtf = useMemo(
+    () => (state ? wtfNeighbor(state, concepts, metric) : undefined),
+    [state, concepts, metric],
+  );
   const ancestry = useMemo(() => {
     if (!state) return [];
     return state.ancestry
@@ -131,6 +138,36 @@ export function ManifoldApp() {
               value={metric}
               onChange={(m) => useManifold.getState().setMetric(m)}
             />
+            <WordFinder
+              extra={customConcepts}
+              onPick={(c) => {
+                useManifold.getState().setSelectedConcept(c.id);
+                const next = `take this to ${c.label}`;
+                useManifold.getState().setDraft(next);
+                useManifold.getState().previewCommand(next);
+                setFlyToId(c.id);
+                setFlyToken((n) => n + 1);
+              }}
+              onNovel={(label) => {
+                const existing = findConcept(label, customConcepts);
+                if (existing) {
+                  useManifold.getState().setSelectedConcept(existing.id);
+                  const next = `take this to ${existing.label}`;
+                  useManifold.getState().setDraft(next);
+                  useManifold.getState().previewCommand(next);
+                  setFlyToId(existing.id);
+                  setFlyToken((n) => n + 1);
+                  return;
+                }
+                const planted = inflateWord(label, "rare");
+                useManifold.getState().plant(planted);
+                const next = `take this to ${planted.label}`;
+                useManifold.getState().setDraft(next);
+                useManifold.getState().previewCommand(next);
+                setFlyToId(planted.id);
+                setFlyToken((n) => n + 1);
+              }}
+            />
             <RouteRecipe
               pending={pending}
               selectedLabel={selected?.label}
@@ -146,6 +183,8 @@ export function ManifoldApp() {
               wtfId={wtf?.id}
               pendingTargetId={pending?.targetId ?? selectedConceptId ?? undefined}
               ancestry={ancestry}
+              flyToId={flyToId}
+              flyToken={flyToken}
               onSelect={(id) => {
                 useManifold.getState().setSelectedConcept(id);
                 const label = concepts.find((c) => c.id === id)?.label;

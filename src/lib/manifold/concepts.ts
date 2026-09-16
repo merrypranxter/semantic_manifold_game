@@ -1,6 +1,9 @@
 import type { Concept, Features } from "./types";
+import { FIELD } from "./lexicon";
+import { normalizeName } from "./names";
 
 export type { Concept };
+export { normalizeName, slugFromLabel, titleCase } from "./names";
 
 function f(
   semanticX: number,
@@ -546,16 +549,28 @@ export const ATLAS: Concept[] = [
   },
 ];
 
-const byId = new Map(ATLAS.map((c) => [c.id, c]));
+const atlasIds = new Set(ATLAS.map((c) => c.id));
+const FIELD_UNIQUE = FIELD.filter((c) => !atlasIds.has(c.id));
+export const CATALOG: Concept[] = [...ATLAS, ...FIELD_UNIQUE];
+
+const byId = new Map(CATALOG.map((c) => [c.id, c]));
+const byNorm = new Map<string, Concept>();
+for (const c of CATALOG) {
+  byNorm.set(normalizeName(c.label), c);
+  for (const a of c.aliases) {
+    const n = normalizeName(a);
+    if (n && !byNorm.has(n)) byNorm.set(n, c);
+  }
+}
 
 export function getConcept(id: string): Concept | undefined {
   return byId.get(id);
 }
 
 export function allConcepts(extra: Concept[] = []): Concept[] {
-  if (extra.length === 0) return ATLAS;
-  const seen = new Set(ATLAS.map((c) => c.id));
-  const merged = [...ATLAS];
+  if (extra.length === 0) return CATALOG;
+  const seen = new Set(CATALOG.map((c) => c.id));
+  const merged = [...CATALOG];
   for (const c of extra) {
     if (!seen.has(c.id)) {
       merged.push(c);
@@ -571,31 +586,54 @@ export function findConcept(
 ): Concept | undefined {
   const n = normalizeName(phrase);
   if (!n) return undefined;
-  const pool = allConcepts(extra);
-  for (const c of pool) {
-    if (normalizeName(c.label) === n || c.aliases.some((a) => normalizeName(a) === n)) {
-      return c;
-    }
+  for (const c of extra) {
+    if (normalizeName(c.label) === n) return c;
+    if (c.aliases.some((a) => normalizeName(a) === n)) return c;
   }
-  for (const c of pool) {
-    if (n.includes(normalizeName(c.label))) return c;
-    if (c.aliases.some((a) => n.includes(normalizeName(a)))) return c;
+  const exact = byNorm.get(n);
+  if (exact) return exact;
+  if (n.length < 4) return undefined;
+  for (const c of extra) {
+    const lab = normalizeName(c.label);
+    if (lab.length >= 4 && (n.includes(lab) || lab.includes(n))) return c;
+  }
+  for (const c of ATLAS) {
+    const lab = normalizeName(c.label);
+    if (lab.length >= 4 && n.includes(lab)) return c;
   }
   return undefined;
 }
 
-export function normalizeName(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9\s-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export function slugFromLabel(label: string): string {
-  return normalizeName(label).replace(/\s+/g, "-").slice(0, 40) || "unnamed";
+export function searchConcepts(
+  query: string,
+  extra: Concept[] = [],
+  limit = 18,
+): Concept[] {
+  const n = normalizeName(query);
+  if (!n) return [];
+  const pool = extra.length ? allConcepts(extra) : CATALOG;
+  const exact: Concept[] = [];
+  const prefix: Concept[] = [];
+  const contain: Concept[] = [];
+  for (const c of pool) {
+    const lab = normalizeName(c.label);
+    const aliases = c.aliases.map(normalizeName);
+    if (lab === n || aliases.includes(n)) {
+      exact.push(c);
+      continue;
+    }
+    if (lab.startsWith(n) || aliases.some((a) => a.startsWith(n))) {
+      prefix.push(c);
+      continue;
+    }
+    if (n.length >= 3 && (lab.includes(n) || c.id.includes(n))) {
+      contain.push(c);
+    }
+    if (exact.length + prefix.length >= limit) break;
+  }
+  const seededFirst = (arr: Concept[]) =>
+    [...arr].sort((a, b) => Number(b.seeded) - Number(a.seeded));
+  return [...seededFirst(exact), ...seededFirst(prefix), ...seededFirst(contain)].slice(0, limit);
 }
 
 export function containsForbidden(text: string, concept: Concept): boolean {
@@ -611,3 +649,4 @@ export function sourceWordIn(text: string, concept: Concept): boolean {
     return an.length > 3 && n.includes(an);
   });
 }
+
