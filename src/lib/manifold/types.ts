@@ -137,9 +137,26 @@ export type Interpretation = {
   reading: string;
 };
 
+export type PhoneticRule = {
+  trigger: string;
+  musicalEffect: string;
+  strength: number;
+};
+
+export type MutationDiff = {
+  added: string[];
+  mutated: string[];
+  suppressed: string[];
+  lost: string[];
+  scarred: string[];
+  preserved: string[];
+};
+
 export type OrganismState = {
   id: string;
   version: number;
+  seedId: string;
+  generation: number;
   name: string;
   identity: string;
   playProjection: string;
@@ -153,6 +170,8 @@ export type OrganismState = {
   interpretations: Interpretation[];
   debris: Debris[];
   ancestry: string[];
+  phoneticRules: PhoneticRule[];
+  lastMutationDiff?: MutationDiff;
   lastOperator?: OperatorId;
   lastTargetId?: string;
   lastWaypointId?: string;
@@ -256,7 +275,6 @@ export type ViewMode = "PLAY" | "LAB";
 
 export type MapMode = "DRIFT" | "TRACK";
 
-
 export const FEATURE_ZERO: Features = {
   semanticX: 0,
   semanticY: 0,
@@ -268,8 +286,11 @@ export const FEATURE_ZERO: Features = {
   energy: 0,
 };
 
-export const STYLE_MAX = 1000;
-export const LYRICS_MAX = 3000;
-export const CAPTION_MAX = 200;
+export const STYLE_MIN = 975;
+export const STYLE_MAX = 999;
+export const LYRICS_MIN = 4900;
+export const LYRICS_MAX = 4999;
+export const CAPTION_MIN = 490;
+export const CAPTION_MAX = 499;
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
