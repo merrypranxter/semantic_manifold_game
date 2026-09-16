@@ -13,7 +13,7 @@ import { RulerSelector } from "./RulerSelector";
 import { SpecDrawer } from "./SpecDrawer";
 import { StartScreen } from "./StartScreen";
 import { WordFinder } from "./WordFinder";
-import { allConcepts, findConcept } from "@/lib/manifold/concepts";
+import { allConcepts, ATLAS, findConcept, warmupCatalog } from "@/lib/manifold/concepts";
 import { inflateWord } from "@/lib/manifold/lexicon";
 import { getMind, padMind } from "@/lib/manifold/minds";
 import { wtfNeighbor } from "@/lib/manifold/metrics";
@@ -30,6 +30,10 @@ export function ManifoldApp() {
   const [flyToken, setFlyToken] = useState(0);
   const [mapMode, setMapMode] = useState<MapMode>("DRIFT");
   const [familyFilter, setFamilyFilter] = useState("all");
+
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [launching, setLaunching] = useState(false);
+  const [fieldReady, setFieldReady] = useState(false);
 
   const started = useManifold((s) => s.started);
   const view = useManifold((s) => s.view);
@@ -48,11 +52,70 @@ export function ManifoldApp() {
   const customConcepts = useManifold((s) => s.customConcepts);
 
   useEffect(() => {
-    void Promise.resolve(useManifold.persist.rehydrate());
+    let alive = true;
+    const finish = () => {
+      if (alive) useManifold.getState().setHydrated(true);
+    };
+    if (useManifold.persist.hasHydrated()) {
+      finish();
+    } else {
+      void Promise.resolve(useManifold.persist.rehydrate()).then(finish).catch(finish);
+    }
+    return () => {
+      alive = false;
+    };
   }, []);
 
+  useEffect(() => {
+    const s = useManifold.getState();
+    if (s.started && (!s.currentId || !s.states[s.currentId])) {
+      s.begin();
+    }
+    if (s.started && s.currentId && s.states[s.currentId]) {
+      setLaunching(false);
+    }
+    if (!s.started) setLaunching(false);
+  }, [started, currentId]);
+
+  useEffect(() => {
+    if (!started) {
+      setFieldReady(false);
+      return;
+    }
+    let cancelled = false;
+    const wake = () => {
+      try {
+        warmupCatalog();
+      } catch {
+        /* field fills on first travel */
+      }
+      if (!cancelled) setFieldReady(true);
+    };
+    const idle =
+      typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback(wake, { timeout: 600 })
+        : window.setTimeout(wake, 0);
+    return () => {
+      cancelled = true;
+      if (typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idle as number);
+      } else {
+        window.clearTimeout(idle as number);
+      }
+    };
+  }, [started]);
+
   const state = currentId && states[currentId] ? hydrateOrganism(states[currentId]!) : undefined;
-  const concepts = useMemo(() => allConcepts(customConcepts), [customConcepts]);
+  const concepts = useMemo(() => {
+    if (!started || !state) return [];
+    if (!fieldReady) {
+      if (customConcepts.length === 0) return ATLAS;
+      const seen = new Set(ATLAS.map((c) => c.id));
+      const extra = customConcepts.filter((c) => !seen.has(c.id));
+      return extra.length ? [...ATLAS, ...extra] : ATLAS;
+    }
+    return allConcepts(customConcepts);
+  }, [started, state, customConcepts, fieldReady]);
   const selected = concepts.find((c) => c.id === selectedConceptId);
   const lastEvent = ledger[ledger.length - 1];
   const wtf = useMemo(
@@ -91,16 +154,49 @@ export function ManifoldApp() {
     />
   );
 
+  const beginPulse = () => {
+    setLaunching(true);
+    setBootError(null);
+    try {
+      useManifold.getState().begin();
+    } catch (err) {
+      setLaunching(false);
+      setBootError(err instanceof Error ? err.message : "Could not begin.");
+    }
+  };
+
   if (!started || !state) {
+    if (started || launching) {
+      return (
+        <main className="flex min-h-dvh flex-col items-start justify-center bg-bg px-5 sm:px-12">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-muted">Field</p>
+          <p className="mt-3 font-display text-3xl italic text-fg">Waking the pulse…</p>
+        </main>
+      );
+    }
     return (
       <>
         <StartScreen
-          onBegin={() => useManifold.getState().begin()}
+          onBegin={beginPulse}
           onOpenSpec={() => setSpecOpen(true)}
           onOpenRack={() => setRackOpen(true)}
+          error={bootError}
         />
-        {spec}
-        {rack}
+        {specOpen ? <SpecDrawer open onClose={() => setSpecOpen(false)} /> : null}
+        {rackOpen ? (
+          <MindRack
+            open
+            onClose={() => setRackOpen(false)}
+            installedId={null}
+            history={[]}
+            onSlot={(id) => {
+              beginPulse();
+              useManifold.getState().slotMind(id);
+              setRackOpen(false);
+            }}
+            onEject={() => useManifold.getState().ejectMind()}
+          />
+        ) : null}
       </>
     );
   }

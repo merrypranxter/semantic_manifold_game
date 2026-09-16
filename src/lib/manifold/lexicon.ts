@@ -73,6 +73,22 @@ function buildField(): Concept[] {
   return out;
 }
 
-export const FIELD: Concept[] = buildField();
+let fieldCache: Concept[] | null = null;
+let fieldByIdCache: Map<string, Concept> | null = null;
 
-export const FIELD_BY_ID = new Map(FIELD.map((c) => [c.id, c]));
+export function getField(): Concept[] {
+  if (!fieldCache) {
+    fieldCache = buildField();
+    fieldByIdCache = new Map(fieldCache.map((c) => [c.id, c]));
+  }
+  return fieldCache;
+}
+
+export function getFieldById(id: string): Concept | undefined {
+  if (!fieldByIdCache) getField();
+  return fieldByIdCache?.get(id);
+}
+
+export function warmupField(): void {
+  getField();
+}

@@ -1,5 +1,5 @@
 import type { Concept, Features } from "./types";
-import { FIELD } from "./lexicon";
+import { getField } from "./lexicon";
 import { normalizeName } from "./names";
 
 export type { Concept };
@@ -550,27 +550,50 @@ export const ATLAS: Concept[] = [
 ];
 
 const atlasIds = new Set(ATLAS.map((c) => c.id));
-const FIELD_UNIQUE = FIELD.filter((c) => !atlasIds.has(c.id));
-export const CATALOG: Concept[] = [...ATLAS, ...FIELD_UNIQUE];
 
-const byId = new Map(CATALOG.map((c) => [c.id, c]));
-const byNorm = new Map<string, Concept>();
-for (const c of CATALOG) {
-  byNorm.set(normalizeName(c.label), c);
-  for (const a of c.aliases) {
-    const n = normalizeName(a);
-    if (n && !byNorm.has(n)) byNorm.set(n, c);
+let catalogCache: Concept[] | null = null;
+let byId: Map<string, Concept> | null = null;
+let byNorm: Map<string, Concept> | null = null;
+
+function buildIndexes(catalog: Concept[]) {
+  const ids = new Map<string, Concept>();
+  const names = new Map<string, Concept>();
+  for (const c of catalog) {
+    ids.set(c.id, c);
+    names.set(normalizeName(c.label), c);
+    for (const a of c.aliases) {
+      const n = normalizeName(a);
+      if (n && !names.has(n)) names.set(n, c);
+    }
   }
+  byId = ids;
+  byNorm = names;
+}
+
+export function getCatalog(): Concept[] {
+  if (!catalogCache) {
+    catalogCache = [...ATLAS, ...getField().filter((c) => !atlasIds.has(c.id))];
+    buildIndexes(catalogCache);
+  }
+  return catalogCache;
+}
+
+export const CATALOG: Concept[] = ATLAS;
+
+export function warmupCatalog(): void {
+  getCatalog();
 }
 
 export function getConcept(id: string): Concept | undefined {
-  return byId.get(id);
+  if (!byId) getCatalog();
+  return byId?.get(id);
 }
 
 export function allConcepts(extra: Concept[] = []): Concept[] {
-  if (extra.length === 0) return CATALOG;
-  const seen = new Set(CATALOG.map((c) => c.id));
-  const merged = [...CATALOG];
+  const catalog = getCatalog();
+  if (extra.length === 0) return catalog;
+  const seen = new Set(catalog.map((c) => c.id));
+  const merged = [...catalog];
   for (const c of extra) {
     if (!seen.has(c.id)) {
       merged.push(c);
@@ -590,7 +613,8 @@ export function findConcept(
     if (normalizeName(c.label) === n) return c;
     if (c.aliases.some((a) => normalizeName(a) === n)) return c;
   }
-  const exact = byNorm.get(n);
+  if (!byNorm) getCatalog();
+  const exact = byNorm?.get(n);
   if (exact) return exact;
   if (n.length < 4) return undefined;
   for (const c of extra) {
@@ -611,7 +635,7 @@ export function searchConcepts(
 ): Concept[] {
   const n = normalizeName(query);
   if (!n) return [];
-  const pool = extra.length ? allConcepts(extra) : CATALOG;
+  const pool = extra.length ? allConcepts(extra) : getCatalog();
   const exact: Concept[] = [];
   const prefix: Concept[] = [];
   const contain: Concept[] = [];

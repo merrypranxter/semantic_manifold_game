@@ -28,6 +28,10 @@ import { transduceConcept } from "@/lib/xai/transduce";
 const MAX_STATES = 28;
 const MAX_LEDGER = 48;
 
+/** In-session begin must survive a late persist rehydrate. */
+let sessionPulse: OrganismState | null = null;
+
+
 type ManifoldStore = {
   saveVersion: number;
   started: boolean;
@@ -169,11 +173,12 @@ export const useManifold = create<ManifoldStore>()(
       concepts: () => allConcepts(get().customConcepts),
 
       begin: () => {
-        const origin = createOrigin();
+        const origin = sessionPulse ?? createOrigin();
+        sessionPulse = origin;
         set({
           started: true,
           currentId: origin.id,
-          states: { [origin.id]: origin },
+          states: { ...get().states, [origin.id]: origin },
           ledger: [],
           compile: null,
           compileOpen: false,
@@ -187,6 +192,7 @@ export const useManifold = create<ManifoldStore>()(
       },
 
       reset: () => {
+        sessionPulse = null;
         set({ ...emptyRun(), hydrated: true });
       },
 
@@ -449,12 +455,39 @@ export const useManifold = create<ManifoldStore>()(
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       migrate: (persisted) => {
-        const p = persisted as Partial<ManifoldStore>;
-        const states: Record<string, OrganismState> = {};
-        for (const [id, s] of Object.entries(p.states ?? {})) {
-          states[id] = hydrateOrganism(s);
+        try {
+          const p = persisted as Partial<ManifoldStore>;
+          const states: Record<string, OrganismState> = {};
+          for (const [id, s] of Object.entries(p.states ?? {})) {
+            if (s && typeof s === "object") states[id] = hydrateOrganism(s);
+          }
+          return { ...p, states, saveVersion: VERSION };
+        } catch {
+          return { saveVersion: VERSION };
         }
-        return { ...p, states, saveVersion: VERSION };
+      },
+      merge: (persistedState, currentState) => {
+        const p = (persistedState ?? {}) as Partial<ManifoldStore>;
+        if (sessionPulse) {
+          const id = currentState.currentId ?? sessionPulse.id;
+          const states = currentState.states[sessionPulse.id]
+            ? currentState.states
+            : { ...currentState.states, [sessionPulse.id]: sessionPulse };
+          return {
+            ...currentState,
+            started: true,
+            currentId: id,
+            states,
+          };
+        }
+        if (currentState.started && currentState.currentId && currentState.states[currentState.currentId]) {
+          return currentState;
+        }
+        return {
+          ...currentState,
+          ...p,
+          states: p.states ?? currentState.states,
+        };
       },
       partialize: (s) => ({
         saveVersion: s.saveVersion,
@@ -466,6 +499,9 @@ export const useManifold = create<ManifoldStore>()(
         ledger: s.ledger,
         customConcepts: s.customConcepts,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHydrated(true);
+      },
     },
   ),
 );
