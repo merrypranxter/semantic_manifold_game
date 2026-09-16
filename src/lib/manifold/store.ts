@@ -1,7 +1,12 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { getDomainProfile } from "../domain/registry.ts";
+import type {
+  DomainCompileOutput,
+  DomainId,
+  DomainProfile,
+} from "../domain/types.ts";
 import { allConcepts, findConcept, getConcept, type Concept } from "./concepts";
-import { compileSuno, type CompileBoxes } from "./compiler";
 import { wtfNeighbor } from "./metrics";
 import {
   finishMind,
@@ -10,7 +15,6 @@ import {
   unslotMindDelta,
 } from "./mind-engine";
 import { findMind, getMind } from "./minds";
-import { createOrigin } from "./origin";
 import { runOperator } from "./operators";
 import { parseCommand } from "./parser";
 import { applyDelta, hydrateOrganism, lockTrait as lockTraitOn } from "./reducer";
@@ -27,13 +31,14 @@ import { transduceConcept } from "@/lib/xai/transduce";
 
 const MAX_STATES = 28;
 const MAX_LEDGER = 48;
+const DEFAULT_DOMAIN: DomainId = "music";
 
 /** In-session begin must survive a late persist rehydrate. */
-let sessionPulse: OrganismState | null = null;
-
+let sessionPulse: { domainId: DomainId; state: OrganismState } | null = null;
 
 type ManifoldStore = {
   saveVersion: number;
+  domainId: DomainId;
   started: boolean;
   view: ViewMode;
   metric: MetricId;
@@ -44,7 +49,7 @@ type ManifoldStore = {
   pending: CommandProposal | null;
   draft: string;
   selectedConceptId: string | null;
-  compile: CompileBoxes | null;
+  compile: DomainCompileOutput | null;
   compileOpen: boolean;
   busy: boolean;
   error: string | null;
@@ -68,15 +73,18 @@ type ManifoldStore = {
   openCompile: () => void;
   closeCompile: () => void;
   current: () => OrganismState | null;
+  currentDomain: () => DomainProfile;
   concepts: () => Concept[];
 };
 
-function emptyRun() {
+function emptyRun(domainId: DomainId = DEFAULT_DOMAIN) {
+  const domain = getDomainProfile(domainId);
   return {
     saveVersion: VERSION,
+    domainId,
     started: false,
     view: "PLAY" as ViewMode,
-    metric: "SEMANTIC" as MetricId,
+    metric: domain.defaultMetric,
     currentId: null as string | null,
     states: {} as Record<string, OrganismState>,
     ledger: [] as LedgerEvent[],
@@ -84,11 +92,11 @@ function emptyRun() {
     pending: null as CommandProposal | null,
     draft: "",
     selectedConceptId: null as string | null,
-    compile: null as CompileBoxes | null,
+    compile: null as DomainCompileOutput | null,
     compileOpen: false,
     busy: false,
     error: null as string | null,
-    hint: "Begin as a pulse. Drift the field. Type a word. Go there.",
+    hint: domain.idleHint,
     hydrated: false,
   };
 }
@@ -170,13 +178,18 @@ export const useManifold = create<ManifoldStore>()(
         return s ? hydrateOrganism(s) : null;
       },
 
+      currentDomain: () => getDomainProfile(get().domainId),
+
       concepts: () => allConcepts(get().customConcepts),
 
       begin: () => {
-        const origin = sessionPulse ?? createOrigin();
-        sessionPulse = origin;
+        const domain = get().currentDomain();
+        const prior = sessionPulse?.domainId === domain.id ? sessionPulse.state : null;
+        const origin = prior ?? domain.createOrigin();
+        sessionPulse = { domainId: domain.id, state: origin };
         set({
           started: true,
+          domainId: domain.id,
           currentId: origin.id,
           states: { ...get().states, [origin.id]: origin },
           ledger: [],
@@ -185,15 +198,16 @@ export const useManifold = create<ManifoldStore>()(
           pending: null,
           draft: "",
           error: null,
-          hint: "Zoom in. Drag or WASD to drift. Find a word — any word — and go there.",
+          hint: domain.beginHint,
           view: "PLAY",
-          metric: "SEMANTIC",
+          metric: domain.defaultMetric,
         });
       },
 
       reset: () => {
+        const domainId = get().domainId;
         sessionPulse = null;
-        set({ ...emptyRun(), hydrated: true });
+        set({ ...emptyRun(domainId), hydrated: true });
       },
 
       previewCommand: (raw) => {
@@ -445,7 +459,8 @@ export const useManifold = create<ManifoldStore>()(
       openCompile: () => {
         const cur = get().current();
         if (!cur) return;
-        set({ compile: compileSuno(cur), compileOpen: true });
+        const domain = get().currentDomain();
+        set({ compile: domain.compile(cur), compileOpen: true });
       },
       closeCompile: () => set({ compileOpen: false }),
     }),
@@ -461,20 +476,27 @@ export const useManifold = create<ManifoldStore>()(
           for (const [id, s] of Object.entries(p.states ?? {})) {
             if (s && typeof s === "object") states[id] = hydrateOrganism(s);
           }
-          return { ...p, states, saveVersion: VERSION };
+          return {
+            ...p,
+            domainId: p.domainId ?? DEFAULT_DOMAIN,
+            states,
+            saveVersion: VERSION,
+          };
         } catch {
-          return { saveVersion: VERSION };
+          return { saveVersion: VERSION, domainId: DEFAULT_DOMAIN };
         }
       },
       merge: (persistedState, currentState) => {
         const p = (persistedState ?? {}) as Partial<ManifoldStore>;
         if (sessionPulse) {
-          const id = currentState.currentId ?? sessionPulse.id;
-          const states = currentState.states[sessionPulse.id]
+          const pulse = sessionPulse.state;
+          const id = currentState.currentId ?? pulse.id;
+          const states = currentState.states[pulse.id]
             ? currentState.states
-            : { ...currentState.states, [sessionPulse.id]: sessionPulse };
+            : { ...currentState.states, [pulse.id]: pulse };
           return {
             ...currentState,
+            domainId: sessionPulse.domainId,
             started: true,
             currentId: id,
             states,
@@ -486,11 +508,13 @@ export const useManifold = create<ManifoldStore>()(
         return {
           ...currentState,
           ...p,
+          domainId: p.domainId ?? currentState.domainId,
           states: p.states ?? currentState.states,
         };
       },
       partialize: (s) => ({
         saveVersion: s.saveVersion,
+        domainId: s.domainId,
         started: s.started,
         view: s.view,
         metric: s.metric,
