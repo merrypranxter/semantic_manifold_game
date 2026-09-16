@@ -1,0 +1,28 @@
+# deps & tooling
+node_modules/
+.node_modules.lock
+
+# build / framework output
+.tanstack/
+.vercel/
+.output/
+.nitro/
+.vinxi/
+dist/
+*.tsbuildinfo
+
+# env & local secrets
+.env
+.env.*
+!.env.example
+
+# app-builder internals
+.grok/
+artifacts/
+attachments/
+screenshots/
+
+# logs & OS
+*.log
+.DS_Store
+Thumbs.db
