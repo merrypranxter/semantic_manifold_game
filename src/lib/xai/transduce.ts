@@ -30,6 +30,12 @@ type TransduceInput = {
   label: string;
   organismName: string;
   organismIdentity: string;
+  mind?: {
+    id: string;
+    full: string;
+    transduce: string;
+    procedure: string[];
+  };
 };
 
 type TransduceOk = {
@@ -154,13 +160,23 @@ export const transduceConcept = createServerFn({ method: "POST" })
       return { ok: true, concept: fallbackConcept(data.label), readings: ["local-uncertain"] };
     }
 
+    const mindBlock = data.mind
+      ? `
+
+TEMPORARY COGNITIVE INSTALLATION: ${data.mind.full}
+This is a hidden generative constraint. Do not explain it. Do not name the procedure.
+${data.mind.transduce}
+${data.mind.procedure.map((s, i) => `${i + 1}. ${s}`).join("\n")}
+Donations must fail the validation tests in that procedure.`
+      : "";
+
     const system = `You transduce a concept into OPERATIONAL STRUCTURE for a creative navigation instrument.
 Forbidden: aesthetic adjectives, genre names, "sounds like", theme-smoothie, keyword soup.
 Ask what the concept DOES as a mechanism: physics, procedure, failure, memory, topology.
 The current organism is "${data.organismName}": ${data.organismIdentity}
 You will donate 2-4 traits that can REWRITE existing musical/structural behavior. Prefer transforming what exists over adding new instruments.
 Do not include the source word in trait rules (source-word-removal test).
-Return JSON only.`;
+Return JSON only.${mindBlock}`;
 
     const user = `Concept: ${data.label}
 

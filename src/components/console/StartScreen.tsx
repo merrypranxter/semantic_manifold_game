@@ -3,9 +3,11 @@ import { Button } from "@/components/ui/button";
 export function StartScreen({
   onBegin,
   onOpenSpec,
+  onOpenRack,
 }: {
   onBegin: () => void;
   onOpenSpec: () => void;
+  onOpenRack?: () => void;
 }) {
   return (
     <main className="relative flex min-h-dvh flex-col justify-end bg-bg px-5 pb-10 pt-16 sm:justify-center sm:px-12">
@@ -29,14 +31,23 @@ export function StartScreen({
         </p>
         <p className="mt-5 max-w-prose text-sm leading-relaxed text-muted">
           This is not a blender and not a prompt box. You move a persistent
-          organism through conceptual space. The field holds thousands of
-          regions — ordinary, rare, and previously unnamed. Zoom in, drift,
-          type a word. The route, the ruler, and the wreckage are the artwork.
-          Suno is just the first synthesizer plugged into it.
+          organism through conceptual space. The field is a volume — thousands
+          of ordinary words, rare words, and previously unnamed ones, each with
+          a job. Drift through it. Travel only when you mean it. Slot a
+          temporary mind if you want the route to think differently. The route,
+          the ruler, and the wreckage are the artwork.
         </p>
         <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button size="lg" onClick={onBegin} className="min-h-12">
             Begin as a pulse
+          </Button>
+          <Button
+            variant="ghost"
+            size="lg"
+            onClick={onOpenRack}
+            className="min-h-12 text-muted"
+          >
+            Mind rack
           </Button>
           <Button
             variant="ghost"
@@ -48,7 +59,7 @@ export function StartScreen({
           </Button>
         </div>
         <p className="mt-4 text-xs text-muted">
-          First path: via Déjà Vu · WTF neighbor · collide with Wasp Nest ·
+          First path: slot Ownership · via Déjà Vu · collide with Wasp Nest ·
           compile
         </p>
       </div>

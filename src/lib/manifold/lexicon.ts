@@ -1,9 +1,10 @@
-import { LEXICON_COUNT, LEXICON_WORDS } from "./data/lexicon";
+import { LEXICON_COUNT as BASE_COUNT, LEXICON_WORDS } from "./data/lexicon";
+import { LEXICON_MORE, LEXICON_MORE_COUNT } from "./data/lexicon-more";
 import { FAMILIES, type FamilyId } from "./families";
 import { fnv, slugFromLabel, titleCase } from "./names";
 import type { Concept, Features } from "./types";
 
-export { LEXICON_COUNT };
+export const LEXICON_COUNT = BASE_COUNT + LEXICON_MORE_COUNT;
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
@@ -15,7 +16,7 @@ function unitJitter(word: string, salt: number, spread: number): number {
 }
 
 export function inflateWord(word: string, familyId: FamilyId): Concept {
-  const fam = FAMILIES[familyId];
+  const fam = FAMILIES[familyId] ?? FAMILIES.rare;
   const slug = slugFromLabel(word);
   const sp = fam.spread;
   const features: Features = {
@@ -46,10 +47,21 @@ export function inflateWord(word: string, familyId: FamilyId): Concept {
   };
 }
 
+function mergedWords(): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [fam, words] of Object.entries(LEXICON_WORDS)) {
+    out[fam] = [...words];
+  }
+  for (const [fam, words] of Object.entries(LEXICON_MORE)) {
+    out[fam] = [...(out[fam] ?? []), ...words];
+  }
+  return out;
+}
+
 function buildField(): Concept[] {
   const out: Concept[] = [];
   const seen = new Set<string>();
-  for (const [fam, words] of Object.entries(LEXICON_WORDS)) {
+  for (const [fam, words] of Object.entries(mergedWords())) {
     if (!(fam in FAMILIES)) continue;
     for (const word of words) {
       const c = inflateWord(word, fam as FamilyId);

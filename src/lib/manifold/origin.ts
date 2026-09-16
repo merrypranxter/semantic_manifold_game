@@ -82,5 +82,8 @@ export function createOrigin(): OrganismState {
     ancestry: [],
     uncertainty: 0.2,
     createdAt: Date.now(),
+    installedMind: null,
+    mindHistory: [],
+    retiredMetrics: [],
   };
 }

@@ -1,4 +1,5 @@
 import { Lock } from "lucide-react";
+import { getMind, padMind } from "@/lib/manifold/minds";
 import type { LedgerEvent, OrganismState, ViewMode } from "@/lib/manifold/types";
 import { cn } from "@/lib/utils";
 
@@ -7,13 +8,16 @@ export function Inspector({
   view,
   lastEvent,
   onLock,
+  onOpenRack,
 }: {
   state: OrganismState;
   view: ViewMode;
   lastEvent: LedgerEvent | undefined;
   onLock: (traitId: string) => void;
+  onOpenRack?: () => void;
 }) {
   const live = state.traits.filter((t) => !t.lost);
+  const mind = getMind(state.installedMind);
 
   return (
     <aside className="flex h-full min-h-0 flex-col bg-surface">
@@ -22,6 +26,20 @@ export function Inspector({
         <h2 className="font-display text-2xl italic leading-tight text-fg">{state.name}</h2>
         <p className="mt-1 text-xs text-muted">v{state.version} · {state.identity}</p>
       </div>
+
+      {mind ? (
+        <button
+          type="button"
+          onClick={onOpenRack}
+          className="border-b border-border bg-elevated px-4 py-2 text-left"
+        >
+          <p className="text-[10px] uppercase tracking-[0.16em] text-accent">Slotted mind</p>
+          <p className="font-mono text-[11px] text-fg">
+            {padMind(mind.n)} {mind.label}
+          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted">{mind.whatItDoes}</p>
+        </button>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {view === "PLAY" ? (

@@ -26,7 +26,8 @@ export type TraitSource =
   | "RECALL"
   | "SEMANTIC_RECOIL"
   | "ROUTE_OPERATOR"
-  | "METRIC_DERIVATION";
+  | "METRIC_DERIVATION"
+  | "MIND";
 
 export type Jurisdiction =
   | "time"
@@ -158,6 +159,9 @@ export type OrganismState = {
   lastFeatureDelta?: Features;
   uncertainty: number;
   createdAt: number;
+  installedMind?: string | null;
+  mindHistory: string[];
+  retiredMetrics: MetricId[];
 };
 
 export type Donation = {
@@ -192,6 +196,9 @@ export type CommandProposal = {
   waypointLabel?: string;
   novelTarget?: string;
   novelWaypoint?: string;
+  mindId?: string;
+  installOnly?: boolean;
+  ejectMind?: boolean;
   confidence: number;
   note: string;
 };
@@ -215,6 +222,10 @@ export type Delta = {
   targetId?: string;
   waypointId?: string;
   geodesicVia?: string[];
+  mindId?: string;
+  mindNote?: string;
+  setInstalledMind?: string | null;
+  retireMetric?: MetricId;
   narrative: string;
   lab: string;
 };
@@ -237,9 +248,14 @@ export type LedgerEvent = {
   lost: string[];
   scars: string[];
   geodesicVia?: string[];
+  mindId?: string;
+  mindNote?: string;
 };
 
 export type ViewMode = "PLAY" | "LAB";
+
+export type MapMode = "DRIFT" | "TRACK";
+
 
 export const FEATURE_ZERO: Features = {
   semanticX: 0,
@@ -256,4 +272,4 @@ export const STYLE_MAX = 1000;
 export const LYRICS_MAX = 3000;
 export const CAPTION_MAX = 200;
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 3;

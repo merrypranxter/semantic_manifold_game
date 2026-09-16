@@ -5,6 +5,15 @@ function bumpRecency(traits: Trait[]): Trait[] {
   return traits.map((t) => ({ ...t, recency: t.recency + 0.05 }));
 }
 
+export function hydrateOrganism(state: OrganismState): OrganismState {
+  return {
+    ...state,
+    installedMind: state.installedMind ?? null,
+    mindHistory: state.mindHistory ?? [],
+    retiredMetrics: state.retiredMetrics ?? [],
+  };
+}
+
 export function applyDelta(
   state: OrganismState,
   delta: Delta,
@@ -12,22 +21,26 @@ export function applyDelta(
   targetLabel: string,
   waypointLabel?: string,
 ): { next: OrganismState; event: LedgerEvent } {
+  const src = hydrateOrganism(state);
   const next: OrganismState = {
-    ...state,
+    ...src,
     id: uid("st"),
-    version: state.version + 1,
-    traits: bumpRecency(state.traits.map((t) => ({ ...t }))),
-    invariants: state.invariants.map((i) => ({ ...i })),
-    scars: [...state.scars],
-    relationships: [...state.relationships],
-    memories: [...state.memories],
-    interpretations: [...state.interpretations],
-    debris: [...state.debris],
-    ancestry: [...state.ancestry, state.id],
+    version: src.version + 1,
+    traits: bumpRecency(src.traits.map((t) => ({ ...t }))),
+    invariants: src.invariants.map((i) => ({ ...i })),
+    scars: [...src.scars],
+    relationships: [...src.relationships],
+    memories: [...src.memories],
+    interpretations: [...src.interpretations],
+    debris: [...src.debris],
+    ancestry: [...src.ancestry, src.id],
     lastOperator: delta.operator,
     lastTargetId: delta.targetId,
     lastWaypointId: delta.waypointId,
     createdAt: Date.now(),
+    installedMind: src.installedMind ?? null,
+    mindHistory: [...src.mindHistory],
+    retiredMetrics: [...src.retiredMetrics],
   };
 
   const added: string[] = [];
@@ -103,6 +116,18 @@ export function applyDelta(
     }
   }
 
+  if (delta.setInstalledMind !== undefined) {
+    if (delta.setInstalledMind) {
+      next.installedMind = delta.setInstalledMind;
+      next.mindHistory = [...next.mindHistory, delta.setInstalledMind].slice(-16);
+    } else {
+      next.installedMind = null;
+    }
+  }
+  if (delta.retireMetric && !next.retiredMetrics.includes(delta.retireMetric)) {
+    next.retiredMetrics = [...next.retiredMetrics, delta.retireMetric];
+  }
+
   if (next.ancestry.length > 36) {
     next.ancestry = next.ancestry.slice(-36);
   }
@@ -118,7 +143,7 @@ export function applyDelta(
     targetLabel,
     waypointId: delta.waypointId,
     waypointLabel,
-    fromStateId: state.id,
+    fromStateId: src.id,
     toStateId: next.id,
     narrative: delta.narrative,
     lab: delta.lab,
@@ -127,6 +152,8 @@ export function applyDelta(
     lost,
     scars,
     geodesicVia: delta.geodesicVia,
+    mindId: delta.mindId,
+    mindNote: delta.mindNote,
   };
 
   return { next, event };

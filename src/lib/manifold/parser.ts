@@ -1,4 +1,5 @@
 import { findConcept, normalizeName, type Concept } from "./concepts";
+import { findMind, padMind } from "./minds";
 import type { CommandProposal, OperatorId } from "./types";
 
 const STOP = new Set([
@@ -135,6 +136,49 @@ export function parseCommand(
       targetLabel: "",
       confidence: 0,
       note: "Empty command.",
+    };
+  }
+
+  if (/\b(eject|uninstall|unslot|unequip|remove (?:the )?mind|clear (?:the )?mind|drop (?:the )?mind)\b/.test(n)) {
+    return {
+      raw,
+      operator: "KEEP_GOING",
+      targetLabel: "",
+      ejectMind: true,
+      confidence: 0.9,
+      note: "Eject the installed mind. The procedure leaves; a scar remains.",
+    };
+  }
+
+  if (/\b(install|slot|rack|load mind|use mind|equip)\b/.test(n)) {
+    const rest = n
+      .replace(
+        /\b(install|slot|rack|load|use|equip|the|a|an|mind|module|this|please|temporary|cognitive)\b/g,
+        " ",
+      )
+      .replace(/\s+/g, " ")
+      .trim();
+    const mind = findMind(rest);
+    if (mind) {
+      return {
+        raw,
+        operator: "KEEP_GOING",
+        targetLabel: mind.label,
+        mindId: mind.id,
+        installOnly: true,
+        confidence: 0.95,
+        note: `Slot ${padMind(mind.n)} ${mind.label}. Hidden constraint — destinations will be forced through it.`,
+      };
+    }
+    return {
+      raw,
+      operator: "KEEP_GOING",
+      targetLabel: rest,
+      installOnly: true,
+      confidence: 0.35,
+      note: rest
+        ? `No mind named “${rest}”. Try install ownership, slot vacuum, or open the rack.`
+        : "Name a mind to slot. Open the rack, or try install ownership.",
     };
   }
 

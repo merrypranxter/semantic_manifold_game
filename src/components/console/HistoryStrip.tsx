@@ -1,3 +1,4 @@
+import { getMind, padMind } from "@/lib/manifold/minds";
 import type { LedgerEvent, OrganismState } from "@/lib/manifold/types";
 import { cn } from "@/lib/utils";
 
@@ -17,10 +18,23 @@ export function HistoryStrip({
   const chips: { id: string; label: string; sub: string }[] = [];
   if (origin) chips.push({ id: origin.id, label: "Origin", sub: origin.name });
   for (const ev of ledger) {
+    const mind = ev.mindId ? getMind(ev.mindId) : undefined;
+    const isSlot = Boolean(mind && !ev.targetId && ev.lab.includes("INSTALL"));
+    const isEject = Boolean(mind && ev.lab.includes("EJECT"));
     chips.push({
       id: ev.toStateId,
-      label: ev.operator,
-      sub: ev.waypointLabel ? `${ev.waypointLabel} → ${ev.targetLabel}` : ev.targetLabel,
+      label: isSlot
+        ? `M${mind ? padMind(mind.n) : ""}`
+        : isEject
+          ? "EJECT"
+          : ev.operator,
+      sub: isSlot
+        ? mind?.label ?? "mind"
+        : isEject
+          ? mind?.label ?? "mind"
+          : ev.waypointLabel
+            ? `${ev.waypointLabel} → ${ev.targetLabel}`
+            : ev.targetLabel,
     });
   }
 

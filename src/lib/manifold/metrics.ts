@@ -2,6 +2,44 @@ import type { Concept } from "./concepts";
 import type { Features, MetricId, OrganismState } from "./types";
 
 export type Vec2 = { x: number; y: number };
+export type Vec3 = { x: number; y: number; z: number };
+
+export function projectFeatures(f: Features, metric: MetricId): Vec2 {
+  switch (metric) {
+    case "SEMANTIC":
+      return { x: f.semanticX, y: f.semanticY };
+    case "FAILURE":
+      return { x: f.failure * 2 - 1, y: f.energy * 2 - 1 };
+    case "MEMORY":
+      return { x: f.memory * 2 - 1, y: f.temporal * 2 - 1 };
+    case "TEMPORAL":
+      return { x: f.temporal * 2 - 1, y: f.structure * 2 - 1 };
+    case "TOPOLOGICAL":
+      return { x: f.topology * 2 - 1, y: f.structure * 2 - 1 };
+  }
+}
+
+/** Depth axis is the feature the current ruler is not using as X/Y. */
+export function altitudeOf(f: Features, metric: MetricId): number {
+  switch (metric) {
+    case "SEMANTIC":
+      return f.structure * 2 - 1;
+    case "FAILURE":
+      return f.topology * 2 - 1;
+    case "MEMORY":
+      return f.energy * 2 - 1;
+    case "TEMPORAL":
+      return f.memory * 2 - 1;
+    case "TOPOLOGICAL":
+      return f.temporal * 2 - 1;
+  }
+}
+
+export function projectFeatures3(f: Features, metric: MetricId): Vec3 {
+  const p = projectFeatures(f, metric);
+  return { x: p.x, y: p.y, z: altitudeOf(f, metric) * 0.42 };
+}
+
 
 export const METRICS: { id: MetricId; label: string; blurb: string }[] = [
   {
@@ -30,21 +68,6 @@ export const METRICS: { id: MetricId; label: string; blurb: string }[] = [
     blurb: "Nearness by connectedness and packing. How parts attach, not what they mean.",
   },
 ];
-
-export function projectFeatures(f: Features, metric: MetricId): Vec2 {
-  switch (metric) {
-    case "SEMANTIC":
-      return { x: f.semanticX, y: f.semanticY };
-    case "FAILURE":
-      return { x: f.failure * 2 - 1, y: f.energy * 2 - 1 };
-    case "MEMORY":
-      return { x: f.memory * 2 - 1, y: f.temporal * 2 - 1 };
-    case "TEMPORAL":
-      return { x: f.temporal * 2 - 1, y: f.structure * 2 - 1 };
-    case "TOPOLOGICAL":
-      return { x: f.topology * 2 - 1, y: f.structure * 2 - 1 };
-  }
-}
 
 export function dist(a: Vec2, b: Vec2): number {
   const dx = a.x - b.x;

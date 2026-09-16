@@ -1,4 +1,5 @@
 import { ATLAS, getConcept, sourceWordIn } from "./concepts";
+import { getMind } from "./minds";
 import {
   CAPTION_MAX,
   LYRICS_MAX,
@@ -87,6 +88,10 @@ export function compileSuno(state: OrganismState): CompileBoxes {
   const scar = state.scars[state.scars.length - 1];
   if (scar) {
     styleParts.push(`Structural scar in effect: ${scar.description}`);
+  }
+  const mind = getMind(state.installedMind);
+  if (mind) {
+    styleParts.push(`Installed cognitive constraint (${mind.label}): ${mind.compile}`);
   }
   styleParts.push("Prefer rules over adjectives. Do not add cinematic trailer drums or generic swell.");
 

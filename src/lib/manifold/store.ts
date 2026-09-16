@@ -3,10 +3,17 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { allConcepts, findConcept, getConcept, type Concept } from "./concepts";
 import { compileSuno, type CompileBoxes } from "./compiler";
 import { wtfNeighbor } from "./metrics";
+import {
+  finishMind,
+  prepareMind,
+  slotMindDelta,
+  unslotMindDelta,
+} from "./mind-engine";
+import { findMind, getMind } from "./minds";
 import { createOrigin } from "./origin";
 import { runOperator } from "./operators";
 import { parseCommand } from "./parser";
-import { applyDelta, lockTrait as lockTraitOn } from "./reducer";
+import { applyDelta, hydrateOrganism, lockTrait as lockTraitOn } from "./reducer";
 import type {
   CommandProposal,
   LedgerEvent,
@@ -52,6 +59,8 @@ type ManifoldStore = {
   executeOperator: (op: OperatorId, targetId?: string) => Promise<void>;
   restore: (stateId: string) => void;
   lockTrait: (traitId: string) => void;
+  slotMind: (mindId: string) => void;
+  ejectMind: () => void;
   openCompile: () => void;
   closeCompile: () => void;
   current: () => OrganismState | null;
@@ -75,7 +84,7 @@ function emptyRun() {
     compileOpen: false,
     busy: false,
     error: null as string | null,
-    hint: "Begin as a pulse. Zoom the field. Type a word. Go there.",
+    hint: "Begin as a pulse. Drift the field. Type a word. Go there.",
     hydrated: false,
   };
 }
@@ -90,6 +99,33 @@ function pruneStates(
     if (keep.has(id)) next[id] = states[id]!;
   }
   return next;
+}
+
+function commitTravel(
+  get: () => ManifoldStore,
+  set: (partial: Partial<ManifoldStore>) => void,
+  next: OrganismState,
+  event: LedgerEvent,
+  hint: string,
+  metric?: MetricId,
+) {
+  const states = pruneStates(
+    { ...get().states, [next.id]: next },
+    [...next.ancestry, next.id],
+  );
+  const ledger = [...get().ledger, event].slice(-MAX_LEDGER);
+  set({
+    states,
+    ledger,
+    currentId: next.id,
+    busy: false,
+    pending: null,
+    draft: "",
+    compile: null,
+    selectedConceptId: event.targetId ?? get().selectedConceptId,
+    hint,
+    ...(metric ? { metric } : {}),
+  });
 }
 
 export const useManifold = create<ManifoldStore>()(
@@ -126,7 +162,8 @@ export const useManifold = create<ManifoldStore>()(
       current: () => {
         const { currentId, states } = get();
         if (!currentId) return null;
-        return states[currentId] ?? null;
+        const s = states[currentId];
+        return s ? hydrateOrganism(s) : null;
       },
 
       concepts: () => allConcepts(get().customConcepts),
@@ -202,7 +239,39 @@ export const useManifold = create<ManifoldStore>()(
         }
         set({ busy: true, error: null });
         try {
+          if (proposal.ejectMind) {
+            const installed = getMind(cur.installedMind);
+            if (!installed) {
+              set({ busy: false, error: "No mind is slotted." });
+              return;
+            }
+            const delta = unslotMindDelta(installed);
+            const { next, event } = applyDelta(cur, delta, get().metric, installed.label);
+            commitTravel(get, set, next, event, "Mind ejected. A scar of that thinking remains.");
+            return;
+          }
+
+          if (proposal.installOnly) {
+            const mind = proposal.mindId ? getMind(proposal.mindId) : findMind(proposal.targetLabel);
+            if (!mind) {
+              set({ busy: false, error: proposal.note || "Name a mind from the rack." });
+              return;
+            }
+            const previous = getMind(cur.installedMind);
+            const delta = slotMindDelta(mind, previous && previous.id !== mind.id ? previous : undefined);
+            const { next, event } = applyDelta(cur, delta, get().metric, mind.label);
+            commitTravel(
+              get,
+              set,
+              next,
+              event,
+              `${mind.label} is thinking through this organism. Go somewhere.`,
+            );
+            return;
+          }
+
           let custom = get().customConcepts;
+          const installed = getMind(cur.installedMind);
           const ensure = async (label?: string, id?: string): Promise<Concept | undefined> => {
             if (id) {
               const hit = getConcept(id) ?? custom.find((c) => c.id === id) ?? findConcept(label ?? "", custom) ?? findConcept(id, custom);
@@ -216,6 +285,14 @@ export const useManifold = create<ManifoldStore>()(
                 label,
                 organismName: cur.name,
                 organismIdentity: cur.identity,
+                mind: installed
+                  ? {
+                      id: installed.id,
+                      full: installed.full,
+                      transduce: installed.transduce,
+                      procedure: installed.procedure,
+                    }
+                  : undefined,
               },
             });
             if (!res.ok) throw new Error(res.error);
@@ -240,40 +317,63 @@ export const useManifold = create<ManifoldStore>()(
           }
 
           const extra = allConcepts(custom);
-          const delta = runOperator(
-            proposal.operator,
-            cur,
-            dest,
-            get().metric,
-            extra,
-            waypoint,
-          );
+          let operator = proposal.operator;
+          let metric = get().metric;
+          let via = waypoint;
+          let retireAfter: MetricId | undefined;
+
+          if (installed) {
+            const prep = prepareMind({
+              state: cur,
+              target: dest,
+              extra,
+              metric,
+              operator,
+              waypoint: via,
+              mind: installed,
+              priorMinds: cur.mindHistory,
+              retiredMetrics: cur.retiredMetrics,
+            });
+            operator = prep.operator;
+            metric = prep.metric;
+            via = prep.waypoint;
+            retireAfter = prep.retireAfter;
+          }
+
+          let delta = runOperator(operator, cur, dest, metric, extra, via);
+          if (installed) {
+            delta = finishMind(delta, {
+              state: cur,
+              target: dest,
+              extra,
+              metric,
+              operator,
+              waypoint: via,
+              mind: installed,
+              priorMinds: cur.mindHistory,
+              retiredMetrics: cur.retiredMetrics,
+            });
+            if (retireAfter) delta.retireMetric = retireAfter;
+          }
           const { next, event } = applyDelta(
             cur,
             delta,
-            get().metric,
+            metric,
             dest.label,
-            waypoint?.label,
+            via?.label,
           );
-          const states = pruneStates(
-            { ...get().states, [next.id]: next },
-            [...next.ancestry, next.id],
+          const wtf = wtfNeighbor(next, extra, metric);
+          const mindHint = installed ? ` Mind ${installed.label} still slotted.` : "";
+          commitTravel(
+            get,
+            set,
+            next,
+            event,
+            wtf
+              ? `WTF neighbor under this ruler: ${wtf.label}.${mindHint}`
+              : `Inspect the descendant.${mindHint}`,
+            metric !== get().metric ? metric : undefined,
           );
-          const ledger = [...get().ledger, event].slice(-MAX_LEDGER);
-          const wtf = wtfNeighbor(next, extra, get().metric);
-          set({
-            states,
-            ledger,
-            currentId: next.id,
-            busy: false,
-            pending: null,
-            draft: "",
-            compile: null,
-            selectedConceptId: dest.id,
-            hint: wtf
-              ? `WTF neighbor under this ruler: ${wtf.label}. Try going there, or collide with wasp nest.`
-              : "Inspect the descendant. Compile when it feels like wreckage or a creature.",
-          });
         } catch (err) {
           set({
             busy: false,
@@ -285,10 +385,14 @@ export const useManifold = create<ManifoldStore>()(
       restore: (stateId) => {
         const s = get().states[stateId];
         if (!s) return;
+        const hydrated = hydrateOrganism(s);
+        const mind = getMind(hydrated.installedMind);
         set({
           currentId: stateId,
           compile: null,
-          hint: `Restored snapshot ${s.name}. Undo is not travel; scars of later events remain in the ledger.`,
+          hint: mind
+            ? `Restored snapshot ${hydrated.name}. ${mind.label} is still thinking through it.`
+            : `Restored snapshot ${hydrated.name}. Undo is not travel; scars of later events remain in the ledger.`,
         });
       },
 
@@ -300,6 +404,36 @@ export const useManifold = create<ManifoldStore>()(
           states: { ...get().states, [cur.id]: next },
           hint: "Trait locked as a STRONG invariant. Later operators must work around it.",
         });
+      },
+
+      slotMind: (mindId) => {
+        const mind = getMind(mindId);
+        if (!mind) return;
+        if (!get().started) get().begin();
+        const proposal: CommandProposal = {
+          raw: `install ${mind.label}`,
+          operator: "KEEP_GOING",
+          targetLabel: mind.label,
+          mindId: mind.id,
+          installOnly: true,
+          confidence: 1,
+          note: `Slot ${mind.label}.`,
+        };
+        set({ pending: proposal, draft: proposal.raw });
+        void get().execute(proposal);
+      },
+
+      ejectMind: () => {
+        const proposal: CommandProposal = {
+          raw: "eject mind",
+          operator: "KEEP_GOING",
+          targetLabel: "",
+          ejectMind: true,
+          confidence: 1,
+          note: "Eject the installed mind.",
+        };
+        set({ pending: proposal, draft: proposal.raw });
+        void get().execute(proposal);
       },
 
       openCompile: () => {
@@ -314,6 +448,14 @@ export const useManifold = create<ManifoldStore>()(
       version: VERSION,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
+      migrate: (persisted) => {
+        const p = persisted as Partial<ManifoldStore>;
+        const states: Record<string, OrganismState> = {};
+        for (const [id, s] of Object.entries(p.states ?? {})) {
+          states[id] = hydrateOrganism(s);
+        }
+        return { ...p, states, saveVersion: VERSION };
+      },
       partialize: (s) => ({
         saveVersion: s.saveVersion,
         started: s.started,

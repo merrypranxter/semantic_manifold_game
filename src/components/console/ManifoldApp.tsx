@@ -1,11 +1,13 @@
-import { FileOutput, FlaskConical, Play, RotateCcw, ScrollText } from "lucide-react";
+import { BrainCircuit, FileOutput, FlaskConical, Play, RotateCcw, ScrollText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CommandBar } from "./CommandBar";
 import { CompileDrawer } from "./CompileDrawer";
+import { FieldChrome } from "./FieldChrome";
 import { HistoryStrip } from "./HistoryStrip";
 import { Inspector } from "./Inspector";
 import { ManifoldMap } from "./ManifoldMap";
+import { MindRack } from "./MindRack";
 import { RouteRecipe } from "./RouteRecipe";
 import { RulerSelector } from "./RulerSelector";
 import { SpecDrawer } from "./SpecDrawer";
@@ -13,15 +15,21 @@ import { StartScreen } from "./StartScreen";
 import { WordFinder } from "./WordFinder";
 import { allConcepts, findConcept } from "@/lib/manifold/concepts";
 import { inflateWord } from "@/lib/manifold/lexicon";
+import { getMind, padMind } from "@/lib/manifold/minds";
 import { wtfNeighbor } from "@/lib/manifold/metrics";
+import { hydrateOrganism } from "@/lib/manifold/reducer";
 import { useManifold } from "@/lib/manifold/store";
+import type { MapMode } from "@/lib/manifold/types";
 import { cn } from "@/lib/utils";
 
 export function ManifoldApp() {
   const [tab, setTab] = useState<"map" | "state">("map");
   const [specOpen, setSpecOpen] = useState(false);
+  const [rackOpen, setRackOpen] = useState(false);
   const [flyToId, setFlyToId] = useState<string | null>(null);
   const [flyToken, setFlyToken] = useState(0);
+  const [mapMode, setMapMode] = useState<MapMode>("DRIFT");
+  const [familyFilter, setFamilyFilter] = useState("all");
 
   const started = useManifold((s) => s.started);
   const view = useManifold((s) => s.view);
@@ -43,7 +51,7 @@ export function ManifoldApp() {
     void Promise.resolve(useManifold.persist.rehydrate());
   }, []);
 
-  const state = currentId ? states[currentId] : undefined;
+  const state = currentId && states[currentId] ? hydrateOrganism(states[currentId]!) : undefined;
   const concepts = useMemo(() => allConcepts(customConcepts), [customConcepts]);
   const selected = concepts.find((c) => c.id === selectedConceptId);
   const lastEvent = ledger[ledger.length - 1];
@@ -61,9 +69,26 @@ export function ManifoldApp() {
     const first = Object.values(states).find((s) => s.version === 0);
     return first;
   }, [states]);
+  const slotted = getMind(state?.installedMind);
 
   const spec = (
     <SpecDrawer open={specOpen} onClose={() => setSpecOpen(false)} />
+  );
+  const rack = (
+    <MindRack
+      open={rackOpen}
+      onClose={() => setRackOpen(false)}
+      installedId={state?.installedMind}
+      history={state?.mindHistory ?? []}
+      onSlot={(id) => {
+        useManifold.getState().slotMind(id);
+        setRackOpen(false);
+      }}
+      onEject={() => {
+        useManifold.getState().ejectMind();
+        setRackOpen(false);
+      }}
+    />
   );
 
   if (!started || !state) {
@@ -72,8 +97,10 @@ export function ManifoldApp() {
         <StartScreen
           onBegin={() => useManifold.getState().begin()}
           onOpenSpec={() => setSpecOpen(true)}
+          onOpenRack={() => setRackOpen(true)}
         />
         {spec}
+        {rack}
       </>
     );
   }
@@ -107,6 +134,17 @@ export function ManifoldApp() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setRackOpen(true)}
+            aria-label="Open mind rack"
+          >
+            <BrainCircuit />
+            <span className="hidden sm:inline">
+              {slotted ? `${padMind(slotted.n)} ${slotted.label}` : "Minds"}
+            </span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => useManifold.getState().openCompile()}
           >
             <FileOutput />
@@ -133,48 +171,51 @@ export function ManifoldApp() {
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <section className={cn("flex min-h-0 flex-col", tab !== "map" && "hidden lg:flex")}>
-          <div className="flex flex-wrap items-end justify-between gap-2 px-3 py-2">
-            <RulerSelector
-              value={metric}
-              onChange={(m) => useManifold.getState().setMetric(m)}
-            />
-            <WordFinder
-              extra={customConcepts}
-              onPick={(c) => {
-                useManifold.getState().setSelectedConcept(c.id);
-                const next = `take this to ${c.label}`;
-                useManifold.getState().setDraft(next);
-                useManifold.getState().previewCommand(next);
-                setFlyToId(c.id);
-                setFlyToken((n) => n + 1);
-              }}
-              onNovel={(label) => {
-                const existing = findConcept(label, customConcepts);
-                if (existing) {
-                  useManifold.getState().setSelectedConcept(existing.id);
-                  const next = `take this to ${existing.label}`;
+          <div className="flex flex-col gap-2 px-3 py-2">
+            <div className="flex flex-wrap items-end gap-2">
+              <RulerSelector
+                value={metric}
+                onChange={(m) => useManifold.getState().setMetric(m)}
+              />
+              <WordFinder
+                extra={customConcepts}
+                onPick={(c) => {
+                  useManifold.getState().setSelectedConcept(c.id);
+                  const next = `take this to ${c.label}`;
                   useManifold.getState().setDraft(next);
                   useManifold.getState().previewCommand(next);
-                  setFlyToId(existing.id);
+                  setFlyToId(c.id);
                   setFlyToken((n) => n + 1);
-                  return;
-                }
-                const planted = inflateWord(label, "rare");
-                useManifold.getState().plant(planted);
-                const next = `take this to ${planted.label}`;
-                useManifold.getState().setDraft(next);
-                useManifold.getState().previewCommand(next);
-                setFlyToId(planted.id);
-                setFlyToken((n) => n + 1);
-              }}
-            />
+                }}
+                onNovel={(label) => {
+                  const existing = findConcept(label, customConcepts);
+                  if (existing) {
+                    useManifold.getState().setSelectedConcept(existing.id);
+                    const next = `take this to ${existing.label}`;
+                    useManifold.getState().setDraft(next);
+                    useManifold.getState().previewCommand(next);
+                    setFlyToId(existing.id);
+                    setFlyToken((n) => n + 1);
+                    return;
+                  }
+                  const planted = inflateWord(label, "rare");
+                  useManifold.getState().plant(planted);
+                  const next = `take this to ${planted.label}`;
+                  useManifold.getState().setDraft(next);
+                  useManifold.getState().previewCommand(next);
+                  setFlyToId(planted.id);
+                  setFlyToken((n) => n + 1);
+                }}
+              />
+            </div>
             <RouteRecipe
               pending={pending}
               selectedLabel={selected?.label}
               metric={metric}
+              mindLabel={slotted?.label}
             />
           </div>
-          <div className="min-h-72 flex-1 lg:min-h-0">
+          <div className="relative min-h-72 flex-1 lg:min-h-0">
             <ManifoldMap
               state={state}
               concepts={concepts}
@@ -185,6 +226,8 @@ export function ManifoldApp() {
               ancestry={ancestry}
               flyToId={flyToId}
               flyToken={flyToken}
+              mode={mapMode}
+              familyFilter={familyFilter}
               onSelect={(id) => {
                 useManifold.getState().setSelectedConcept(id);
                 const label = concepts.find((c) => c.id === id)?.label;
@@ -194,6 +237,13 @@ export function ManifoldApp() {
                   useManifold.getState().previewCommand(next);
                 }
               }}
+            />
+            <FieldChrome
+              mode={mapMode}
+              onMode={setMapMode}
+              family={familyFilter}
+              onFamily={setFamilyFilter}
+              wordCount={concepts.length}
             />
           </div>
         </section>
@@ -208,6 +258,7 @@ export function ManifoldApp() {
             view={view}
             lastEvent={lastEvent}
             onLock={(id) => useManifold.getState().lockTrait(id)}
+            onOpenRack={() => setRackOpen(true)}
           />
         </section>
       </div>
@@ -283,6 +334,7 @@ export function ManifoldApp() {
         onClose={() => useManifold.getState().closeCompile()}
       />
       {spec}
+      {rack}
     </div>
   );
 }

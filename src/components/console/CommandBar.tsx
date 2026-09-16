@@ -52,7 +52,7 @@ export function CommandBar({
             onPreview();
           }}
           onBlur={onPreview}
-          placeholder="take this to the void by way of tardigrades"
+          placeholder="install ownership · take this to the void"
           className="h-12 min-w-0 flex-1 rounded-xl bg-elevated px-4 font-mono text-sm text-fg shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-fg)_10%,transparent)] outline-none placeholder:text-muted/70 focus:shadow-[0_0_0_1px_var(--color-accent)]"
           autoCapitalize="off"
           autoComplete="off"
@@ -66,9 +66,13 @@ export function CommandBar({
       <p className={cn("mt-2 font-mono text-[11px] leading-relaxed", error ? "text-danger" : "text-muted")}>
         {error
           ? error
-          : pending
+          : pending?.installOnly
+            ? pending.note
+            : pending?.ejectMind
+              ? pending.note
+              : pending
             ? `${pending.operator}${pending.waypointLabel ? ` via ${pending.waypointLabel}` : ""} → ${pending.targetLabel || "?"} · ${pending.note}`
-            : "Casual language in. Structured operations underneath."}
+            : "Casual language in. Structured operations underneath. Slot a mind to change how destinations work."}
       </p>
     </div>
   );

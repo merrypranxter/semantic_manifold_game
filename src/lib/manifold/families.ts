@@ -602,3 +602,15 @@ export const FAMILIES: Record<FamilyId, FamilyDef> = {
 };
 
 export const FAMILY_IDS = Object.keys(FAMILIES) as FamilyId[];
+
+export function familyHue(id: string): number {
+  const i = FAMILY_IDS.indexOf(id as FamilyId);
+  const idx = i < 0 ? 11 : i;
+  return (idx * 47 + 18) % 360;
+}
+
+export function familyFill(id: string | undefined, alpha = 1): string {
+  if (!id) return `hsla(198, 34%, 64%, ${alpha})`;
+  return `hsla(${familyHue(id)}, 32%, 60%, ${alpha})`;
+}
+
