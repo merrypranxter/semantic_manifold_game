@@ -29,7 +29,7 @@ export type TraitSource =
   | "METRIC_DERIVATION"
   | "MIND";
 
-export type Jurisdiction =
+export type MusicJurisdiction =
   | "time"
   | "meter"
   | "rhythm"
@@ -51,6 +51,13 @@ export type Jurisdiction =
   | "spatial"
   | "structure"
   | "memory";
+
+/**
+ * Domain profiles own the concrete jurisdiction vocabulary. Keep the original
+ * music literals for autocomplete while allowing image/video profiles to add
+ * their own jurisdictions without changing the manifold engine itself.
+ */
+export type Jurisdiction = MusicJurisdiction | (string & {});
 
 export type InvariantLevel = "SOFT" | "STRONG" | "ABSOLUTE";
 
@@ -255,7 +262,6 @@ export type LedgerEvent = {
 export type ViewMode = "PLAY" | "LAB";
 
 export type MapMode = "DRIFT" | "TRACK";
-
 
 export const FEATURE_ZERO: Features = {
   semanticX: 0,
