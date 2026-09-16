@@ -6,6 +6,7 @@ import {
   VISUAL_JURISDICTIONS,
   VISUAL_SCHEMA,
   createVisualSpecimen,
+  failureSurfacesForOutput,
   jurisdictionsForOutput,
 } from "./visual-schema.ts";
 
@@ -50,6 +51,18 @@ test("visual failure surfaces include static binding and temporal continuity fai
   assert.equal(ids.has("boundary_membership"), true);
   assert.equal(ids.has("frame_identity"), true);
   assert.equal(ids.has("causal_continuity"), true);
+});
+
+test("image failure-surface view excludes temporal-only failures", () => {
+  const image = new Set(
+    failureSurfacesForOutput("image").map((surface) => surface.id),
+  );
+  const video = new Set(
+    failureSurfacesForOutput("video").map((surface) => surface.id),
+  );
+  assert.equal(image.has("identity_binding"), true);
+  assert.equal(image.has("frame_identity"), false);
+  assert.equal(video.has("frame_identity"), true);
 });
 
 test("prompt specimen preserves raw prompt and desired output without decompiling it", () => {
