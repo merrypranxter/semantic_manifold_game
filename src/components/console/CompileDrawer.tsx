@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Check, Clapperboard, Copy, ImageIcon, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { domainIdForOrganism } from "@/lib/domain/runtime-domain";
 import type { DomainCompileOutput } from "@/lib/domain/types";
 import { compileVisual } from "@/lib/domain/visual-compiler";
 import type { VisualOutputKind } from "@/lib/domain/visual-schema";
@@ -22,19 +23,20 @@ export function CompileDrawer({
   const currentId = useManifold((s) => s.currentId);
   const states = useManifold((s) => s.states);
   const state = currentId ? states[currentId] : undefined;
+  const effectiveDomain = domainIdForOrganism(state, domainId);
   const nativeOutput: VisualOutputKind =
     state?.provenance?.outputKind === "video" ? "video" : "image";
   const [visualOutput, setVisualOutput] = useState<VisualOutputKind>(nativeOutput);
 
   useEffect(() => {
-    if (open && domainId === "visual") setVisualOutput(nativeOutput);
-  }, [open, domainId, nativeOutput]);
+    if (open && effectiveDomain === "visual") setVisualOutput(nativeOutput);
+  }, [open, effectiveDomain, nativeOutput]);
 
   const rendered = useMemo(() => {
-    if (domainId !== "visual" || !state) return boxes;
+    if (effectiveDomain !== "visual" || !state) return boxes;
     const lens = retargetVisualOutput(state, visualOutput);
     return compileVisual(lens, visualOutput);
-  }, [boxes, domainId, state, visualOutput]);
+  }, [boxes, effectiveDomain, state, visualOutput]);
 
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
@@ -57,7 +59,7 @@ export function CompileDrawer({
             </Dialog.Close>
           </div>
 
-          {domainId === "visual" && state ? (
+          {effectiveDomain === "visual" && state ? (
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-y border-border py-3">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.16em] text-muted">Rendering lens</p>
