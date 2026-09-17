@@ -27,5 +27,6 @@ jobs:
           src/lib/domain/visual-runtime.test.ts
           src/lib/domain/visual-ui-core.test.ts
           src/lib/domain/visual-cache-core.test.ts
+          src/lib/domain/visual-request-core.test.ts
       - run: npm run typecheck
       - run: npm run build:dev
