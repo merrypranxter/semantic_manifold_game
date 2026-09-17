@@ -6,6 +6,7 @@ import type {
   DomainId,
   DomainProfile,
 } from "../domain/types.ts";
+import type { VisualOutputKind } from "../domain/visual-schema.ts";
 import { allConcepts, findConcept, getConcept, type Concept } from "./concepts";
 import { wtfNeighbor } from "./metrics";
 import {
@@ -27,7 +28,9 @@ import type {
   ViewMode,
 } from "./types";
 import { SAVE_VERSION as VERSION } from "./types";
+import { decompileVisualPrompt } from "@/lib/xai/decompile-visual";
 import { transduceConcept } from "@/lib/xai/transduce";
+import { transduceVisualConcept } from "@/lib/xai/transduce-visual";
 
 const MAX_STATES = 28;
 const MAX_LEDGER = 48;
@@ -61,6 +64,7 @@ type ManifoldStore = {
   setDraft: (s: string) => void;
   setSelectedConcept: (id: string | null) => void;
   plant: (concept: Concept) => void;
+  ingestVisualPrompt: (rawPrompt: string, output: VisualOutputKind) => Promise<void>;
   begin: () => void;
   reset: () => void;
   previewCommand: (raw?: string) => CommandProposal | null;
@@ -99,6 +103,32 @@ function emptyRun(domainId: DomainId = DEFAULT_DOMAIN) {
     hint: domain.idleHint,
     hydrated: false,
   };
+}
+
+function visualOutputOf(state: OrganismState): VisualOutputKind {
+  return state.provenance?.outputKind === "video" ? "video" : "image";
+}
+
+function customConceptBy(
+  custom: Concept[],
+  label?: string,
+  id?: string,
+): Concept | undefined {
+  if (id) {
+    const exact = custom.find((concept) => concept.id === id);
+    if (exact) return exact;
+  }
+  const normalized = label?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  return custom.find(
+    (concept) =>
+      concept.label.trim().toLowerCase() === normalized ||
+      concept.aliases.some((alias) => alias.trim().toLowerCase() === normalized),
+  );
+}
+
+function conceptsForDomain(domainId: DomainId, custom: Concept[]): Concept[] {
+  return domainId === "visual" ? custom : allConcepts(custom);
 }
 
 function pruneStates(
@@ -156,7 +186,11 @@ export const useManifold = create<ManifoldStore>()(
       setSelectedConcept: (id) => set({ selectedConceptId: id }),
 
       plant: (concept) => {
-        const known = getConcept(concept.id) ?? get().customConcepts.find((c) => c.id === concept.id);
+        const custom = get().customConcepts;
+        const known =
+          get().domainId === "visual"
+            ? customConceptBy(custom, concept.label, concept.id)
+            : getConcept(concept.id) ?? customConceptBy(custom, concept.label, concept.id);
         if (known) {
           set({
             selectedConceptId: known.id,
@@ -165,7 +199,7 @@ export const useManifold = create<ManifoldStore>()(
           return;
         }
         set({
-          customConcepts: [...get().customConcepts, concept],
+          customConcepts: [...custom, concept],
           selectedConceptId: concept.id,
           hint: `Planted ${concept.label}. Travel there to make it work on the organism.`,
         });
@@ -180,7 +214,41 @@ export const useManifold = create<ManifoldStore>()(
 
       currentDomain: () => getDomainProfile(get().domainId),
 
-      concepts: () => allConcepts(get().customConcepts),
+      concepts: () => conceptsForDomain(get().domainId, get().customConcepts),
+
+      ingestVisualPrompt: async (rawPrompt, output) => {
+        set({ busy: true, error: null, compile: null, compileOpen: false });
+        try {
+          const result = await decompileVisualPrompt({ data: { rawPrompt, output } });
+          if (!result.ok) {
+            set({ busy: false, error: result.error });
+            return;
+          }
+          const domain = getDomainProfile("visual");
+          const origin = result.origin;
+          sessionPulse = { domainId: "visual", state: origin };
+          set({
+            ...emptyRun("visual"),
+            hydrated: get().hydrated,
+            started: true,
+            domainId: "visual",
+            currentId: origin.id,
+            states: { [origin.id]: origin },
+            metric: domain.defaultMetric,
+            view: "PLAY",
+            busy: false,
+            error: null,
+            hint: result.usedAI
+              ? `Generation zero extracted from the ${output} prompt. Pick a destination and make it work on the specimen.`
+              : `Generation zero built with the local decompiler. Pick a destination; uncertainty is higher until the structure is refined.`,
+          });
+        } catch (err) {
+          set({
+            busy: false,
+            error: err instanceof Error ? err.message : "Visual prompt ingestion failed.",
+          });
+        }
+      },
 
       begin: () => {
         const domain = get().currentDomain();
@@ -292,14 +360,48 @@ export const useManifold = create<ManifoldStore>()(
 
           let custom = get().customConcepts;
           const installed = getMind(cur.installedMind);
+          const visual = get().domainId === "visual";
           const ensure = async (label?: string, id?: string): Promise<Concept | undefined> => {
             if (id) {
-              const hit = getConcept(id) ?? custom.find((c) => c.id === id) ?? findConcept(label ?? "", custom) ?? findConcept(id, custom);
+              const hit = visual
+                ? customConceptBy(custom, label, id)
+                : getConcept(id) ??
+                  customConceptBy(custom, label, id) ??
+                  findConcept(label ?? "", custom) ??
+                  findConcept(id, custom);
               if (hit) return hit;
             }
             if (!label) return undefined;
-            const known = findConcept(label, custom);
+            const known = visual
+              ? customConceptBy(custom, label)
+              : findConcept(label, custom);
             if (known) return known;
+
+            if (visual) {
+              const res = await transduceVisualConcept({
+                data: {
+                  label,
+                  output: visualOutputOf(cur),
+                  organismName: cur.name,
+                  organismIdentity: cur.identity,
+                  traits: cur.traits,
+                  invariants: cur.invariants.map((invariant) => invariant.text),
+                  mind: installed
+                    ? {
+                        id: installed.id,
+                        full: installed.full,
+                        transduce: installed.transduce,
+                        procedure: installed.procedure,
+                      }
+                    : undefined,
+                },
+              });
+              if (!res.ok) throw new Error(res.error);
+              custom = [...custom.filter((c) => c.id !== res.concept.id), res.concept];
+              set({ customConcepts: custom });
+              return res.concept;
+            }
+
             const res = await transduceConcept({
               data: {
                 label,
@@ -336,7 +438,7 @@ export const useManifold = create<ManifoldStore>()(
             return;
           }
 
-          const extra = allConcepts(custom);
+          const extra = conceptsForDomain(get().domainId, custom);
           let operator = proposal.operator;
           let metric = get().metric;
           let via = waypoint;
