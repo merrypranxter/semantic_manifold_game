@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createOrigin } from "./origin.ts";
-import { migratePersistedRun } from "./store-suno.ts";
+import { chooseSessionOrigin, migratePersistedRun } from "./store-suno.ts";
 import { renderSuno } from "../suno/render.ts";
 
 const cachedConcept = {
@@ -33,6 +33,18 @@ describe("Suno store helpers", () => {
     assert.equal(state.seedId, "alien-sensorium");
     assert.equal(state.generation, 0);
     assert.match(state.name, /Alien Sensorium/i);
+  });
+
+  it("reuses a same-seed session origin but never leaks one genotype into another", () => {
+    const first = chooseSessionOrigin("alien-sensorium", null);
+    const same = chooseSessionOrigin("alien-sensorium", first);
+    const different = chooseSessionOrigin("primitive-vacuum", first);
+
+    assert.equal(same.id, first.id);
+    assert.equal(same.seedId, "alien-sensorium");
+    assert.notEqual(different.id, first.id);
+    assert.equal(different.seedId, "primitive-vacuum");
+    assert.equal(different.generation, 0);
   });
 
   it("restoring the same canonical snapshot regenerates byte-identical prompts", () => {
