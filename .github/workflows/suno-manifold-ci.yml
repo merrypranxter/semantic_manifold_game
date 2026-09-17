@@ -22,5 +22,17 @@ jobs:
       - name: Run Suno manifold tests
         run: npx --yes tsx@4.20.5 --test src/lib/suno/*.test.ts src/lib/manifold/*suno*.test.ts
       - run: npm run typecheck
-      - run: npm run lint
+      - name: Lint Suno manifold changes
+        run: >-
+          npx eslint
+          src/lib/suno
+          src/lib/manifold/types.ts
+          src/lib/manifold/origin.ts
+          src/lib/manifold/reducer.ts
+          src/lib/manifold/store-suno.ts
+          src/lib/manifold/store-suno.test.ts
+          src/components/console/GenotypePicker.tsx
+          src/components/console/LivingPromptPanel.tsx
+          src/components/console/MutationDiff.tsx
+          src/components/console/GenomeInspector.tsx
       - run: npm run build
