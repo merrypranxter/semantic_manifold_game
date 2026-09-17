@@ -21,6 +21,7 @@ jobs:
         run: >-
           node --experimental-strip-types --test
           src/lib/domain/registry-core.test.ts
+          src/lib/domain/runtime-domain.test.ts
           src/lib/domain/visual-schema.test.ts
           src/lib/domain/visual-decompiler-core.test.ts
           src/lib/domain/visual-transducer-core.test.ts
