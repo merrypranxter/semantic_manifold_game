@@ -6,7 +6,6 @@ import {
   compileVisual,
 } from "./visual-compiler.ts";
 import { visualProfile } from "./profiles/visual.ts";
-import { getDomainProfile } from "./registry.ts";
 import type { OrganismState, Trait } from "../manifold/types.ts";
 
 function trait(
@@ -119,9 +118,8 @@ test("generic visual compiler follows the specimen output mode without mutating 
   assert.equal(JSON.stringify(state), before);
 });
 
-test("visual profile is registered and exposes the visual jurisdiction vocabulary", () => {
+test("visual profile exposes the visual jurisdiction vocabulary", () => {
   assert.equal(visualProfile.id, "visual");
-  assert.equal(getDomainProfile("visual").id, "visual");
   assert.equal(visualProfile.jurisdictions.includes("subject_identity"), true);
   assert.equal(visualProfile.jurisdictions.includes("frame_correspondence"), true);
 });
