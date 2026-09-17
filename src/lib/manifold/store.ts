@@ -1,5 +1,18 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import {
+  cacheableVisualSource,
+  freshVisualCacheEntry,
+  pruneVisualCache,
+  visualDecompileCacheKey,
+  visualTransductionCacheKey,
+  VISUAL_AI_CACHE_TTL_MS,
+  VISUAL_DECOMPILE_CACHE_LIMIT,
+  VISUAL_TRANSDUCTION_CACHE_LIMIT,
+  type VisualDecompileCacheEntry,
+  type VisualTransductionCacheEntry,
+} from "../domain/visual-cache-core.ts";
+import { visualSpecimenToOrigin } from "../domain/visual-decompiler-core.ts";
 import { getDomainProfile } from "../domain/registry.ts";
 import type {
   DomainCompileOutput,
@@ -49,6 +62,8 @@ type ManifoldStore = {
   states: Record<string, OrganismState>;
   ledger: LedgerEvent[];
   customConcepts: Concept[];
+  visualDecompileCache: Record<string, VisualDecompileCacheEntry>;
+  visualTransductionCache: Record<string, VisualTransductionCacheEntry>;
   pending: CommandProposal | null;
   draft: string;
   selectedConceptId: string | null;
@@ -174,6 +189,8 @@ export const useManifold = create<ManifoldStore>()(
   persist(
     (set, get) => ({
       ...emptyRun(),
+      visualDecompileCache: {},
+      visualTransductionCache: {},
 
       setHydrated: (v) => set({ hydrated: v }),
       setView: (v) => set({ view: v }),
@@ -217,15 +234,12 @@ export const useManifold = create<ManifoldStore>()(
       concepts: () => conceptsForDomain(get().domainId, get().customConcepts),
 
       ingestVisualPrompt: async (rawPrompt, output) => {
-        set({ busy: true, error: null, compile: null, compileOpen: false });
-        try {
-          const result = await decompileVisualPrompt({ data: { rawPrompt, output } });
-          if (!result.ok) {
-            set({ busy: false, error: result.error });
-            return;
-          }
+        if (get().busy) return;
+        const cacheKey = visualDecompileCacheKey(rawPrompt, output);
+        const cached = freshVisualCacheEntry(get().visualDecompileCache, cacheKey);
+        if (cached) {
           const domain = getDomainProfile("visual");
-          const origin = result.origin;
+          const origin = visualSpecimenToOrigin(cached.decompiled);
           sessionPulse = { domainId: "visual", state: origin };
           set({
             ...emptyRun("visual"),
@@ -238,8 +252,48 @@ export const useManifold = create<ManifoldStore>()(
             view: "PLAY",
             busy: false,
             error: null,
+            hint: `Generation zero rebuilt from cached AI decompilation for this ${output} prompt. No model call was needed.`,
+          });
+          return;
+        }
+
+        set({ busy: true, error: null, compile: null, compileOpen: false });
+        try {
+          const result = await decompileVisualPrompt({ data: { rawPrompt, output } });
+          if (!result.ok) {
+            set({ busy: false, error: result.error });
+            return;
+          }
+          const domain = getDomainProfile("visual");
+          const origin = result.origin;
+          sessionPulse = { domainId: "visual", state: origin };
+          const now = Date.now();
+          const visualDecompileCache =
+            result.usedAI && cacheableVisualSource(result.decompiled.source)
+              ? pruneVisualCache(
+                  {
+                    ...get().visualDecompileCache,
+                    [cacheKey]: { cachedAt: now, decompiled: result.decompiled },
+                  },
+                  now,
+                  VISUAL_AI_CACHE_TTL_MS,
+                  VISUAL_DECOMPILE_CACHE_LIMIT,
+                )
+              : get().visualDecompileCache;
+          set({
+            ...emptyRun("visual"),
+            hydrated: get().hydrated,
+            started: true,
+            domainId: "visual",
+            currentId: origin.id,
+            states: { [origin.id]: origin },
+            metric: domain.defaultMetric,
+            view: "PLAY",
+            visualDecompileCache,
+            busy: false,
+            error: null,
             hint: result.usedAI
-              ? `Generation zero extracted from the ${output} prompt. Pick a destination and make it work on the specimen.`
+              ? `Generation zero extracted from the ${output} prompt. The AI reading is cached for exact reuse.`
               : `Generation zero built with the local decompiler. Pick a destination; uncertainty is higher until the structure is refined.`,
           });
         } catch (err) {
@@ -297,6 +351,7 @@ export const useManifold = create<ManifoldStore>()(
       },
 
       executeOperator: async (op, targetId) => {
+        if (get().busy) return;
         const concepts = get().concepts();
         const id = targetId ?? get().selectedConceptId;
         const concept = id ? concepts.find((c) => c.id === id) : undefined;
@@ -315,6 +370,7 @@ export const useManifold = create<ManifoldStore>()(
       },
 
       execute: async (incoming) => {
+        if (get().busy) return;
         const proposal = incoming ?? get().pending ?? get().previewCommand();
         if (!proposal) {
           set({ error: "Type a command or pick a destination on the map." });
@@ -361,27 +417,38 @@ export const useManifold = create<ManifoldStore>()(
           let custom = get().customConcepts;
           const installed = getMind(cur.installedMind);
           const visual = get().domainId === "visual";
-          const ensure = async (label?: string, id?: string): Promise<Concept | undefined> => {
-            if (id) {
-              const hit = visual
-                ? customConceptBy(custom, label, id)
-                : getConcept(id) ??
-                  customConceptBy(custom, label, id) ??
-                  findConcept(label ?? "", custom) ??
-                  findConcept(id, custom);
-              if (hit) return hit;
-            }
-            if (!label) return undefined;
-            const known = visual
-              ? customConceptBy(custom, label)
-              : findConcept(label, custom);
-            if (known) return known;
+          let reusedVisualCache = false;
+          let usedVisualFallback = false;
 
+          const ensure = async (label?: string, id?: string): Promise<Concept | undefined> => {
             if (visual) {
+              const resolvedLabel =
+                label?.trim() || (id ? customConceptBy(custom, undefined, id)?.label : undefined);
+              if (!resolvedLabel) return undefined;
+
+              const output = visualOutputOf(cur);
+              const cacheKey = visualTransductionCacheKey(
+                resolvedLabel,
+                cur,
+                output,
+                installed?.id,
+              );
+              const cached = freshVisualCacheEntry(
+                get().visualTransductionCache,
+                cacheKey,
+              );
+              if (cached) {
+                reusedVisualCache = true;
+                const concept = cached.result.concept;
+                custom = [...custom.filter((c) => c.id !== concept.id), concept];
+                set({ customConcepts: custom });
+                return concept;
+              }
+
               const res = await transduceVisualConcept({
                 data: {
-                  label,
-                  output: visualOutputOf(cur),
+                  label: resolvedLabel,
+                  output,
                   organismName: cur.name,
                   organismIdentity: cur.identity,
                   traits: cur.traits,
@@ -397,10 +464,46 @@ export const useManifold = create<ManifoldStore>()(
                 },
               });
               if (!res.ok) throw new Error(res.error);
+
               custom = [...custom.filter((c) => c.id !== res.concept.id), res.concept];
-              set({ customConcepts: custom });
+              if (cacheableVisualSource(res.source)) {
+                const now = Date.now();
+                const visualTransductionCache = pruneVisualCache(
+                  {
+                    ...get().visualTransductionCache,
+                    [cacheKey]: {
+                      cachedAt: now,
+                      result: {
+                        concept: res.concept,
+                        readings: res.readings,
+                        warnings: res.warnings,
+                        source: res.source,
+                      },
+                    },
+                  },
+                  now,
+                  VISUAL_AI_CACHE_TTL_MS,
+                  VISUAL_TRANSDUCTION_CACHE_LIMIT,
+                );
+                set({ customConcepts: custom, visualTransductionCache });
+              } else {
+                usedVisualFallback = true;
+                set({ customConcepts: custom });
+              }
               return res.concept;
             }
+
+            if (id) {
+              const hit =
+                getConcept(id) ??
+                customConceptBy(custom, label, id) ??
+                findConcept(label ?? "", custom) ??
+                findConcept(id, custom);
+              if (hit) return hit;
+            }
+            if (!label) return undefined;
+            const known = findConcept(label, custom);
+            if (known) return known;
 
             const res = await transduceConcept({
               data: {
@@ -486,14 +589,19 @@ export const useManifold = create<ManifoldStore>()(
           );
           const wtf = wtfNeighbor(next, extra, metric);
           const mindHint = installed ? ` Mind ${installed.label} still slotted.` : "";
+          const costHint = reusedVisualCache
+            ? " Reused cached visual transduction; no model call."
+            : usedVisualFallback
+              ? " Semantic transduction was unavailable, so the deterministic local fallback was used."
+              : "";
           commitTravel(
             get,
             set,
             next,
             event,
             wtf
-              ? `WTF neighbor under this ruler: ${wtf.label}.${mindHint}`
-              : `Inspect the descendant.${mindHint}`,
+              ? `WTF neighbor under this ruler: ${wtf.label}.${mindHint}${costHint}`
+              : `Inspect the descendant.${mindHint}${costHint}`,
             metric !== get().metric ? metric : undefined,
           );
         } catch (err) {
@@ -578,14 +686,32 @@ export const useManifold = create<ManifoldStore>()(
           for (const [id, s] of Object.entries(p.states ?? {})) {
             if (s && typeof s === "object") states[id] = hydrateOrganism(s);
           }
+          const now = Date.now();
           return {
             ...p,
             domainId: p.domainId ?? DEFAULT_DOMAIN,
             states,
+            visualDecompileCache: pruneVisualCache(
+              p.visualDecompileCache ?? {},
+              now,
+              VISUAL_AI_CACHE_TTL_MS,
+              VISUAL_DECOMPILE_CACHE_LIMIT,
+            ),
+            visualTransductionCache: pruneVisualCache(
+              p.visualTransductionCache ?? {},
+              now,
+              VISUAL_AI_CACHE_TTL_MS,
+              VISUAL_TRANSDUCTION_CACHE_LIMIT,
+            ),
             saveVersion: VERSION,
           };
         } catch {
-          return { saveVersion: VERSION, domainId: DEFAULT_DOMAIN };
+          return {
+            saveVersion: VERSION,
+            domainId: DEFAULT_DOMAIN,
+            visualDecompileCache: {},
+            visualTransductionCache: {},
+          };
         }
       },
       merge: (persistedState, currentState) => {
@@ -602,6 +728,14 @@ export const useManifold = create<ManifoldStore>()(
             started: true,
             currentId: id,
             states,
+            visualDecompileCache: {
+              ...(p.visualDecompileCache ?? {}),
+              ...currentState.visualDecompileCache,
+            },
+            visualTransductionCache: {
+              ...(p.visualTransductionCache ?? {}),
+              ...currentState.visualTransductionCache,
+            },
           };
         }
         if (currentState.started && currentState.currentId && currentState.states[currentState.currentId]) {
@@ -612,6 +746,10 @@ export const useManifold = create<ManifoldStore>()(
           ...p,
           domainId: p.domainId ?? currentState.domainId,
           states: p.states ?? currentState.states,
+          visualDecompileCache:
+            p.visualDecompileCache ?? currentState.visualDecompileCache,
+          visualTransductionCache:
+            p.visualTransductionCache ?? currentState.visualTransductionCache,
         };
       },
       partialize: (s) => ({
@@ -624,6 +762,8 @@ export const useManifold = create<ManifoldStore>()(
         states: s.states,
         ledger: s.ledger,
         customConcepts: s.customConcepts,
+        visualDecompileCache: s.visualDecompileCache,
+        visualTransductionCache: s.visualTransductionCache,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
