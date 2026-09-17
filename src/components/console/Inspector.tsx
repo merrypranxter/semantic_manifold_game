@@ -2,6 +2,7 @@ import { Lock } from "lucide-react";
 import { getMind, padMind } from "@/lib/manifold/minds";
 import type { LedgerEvent, OrganismState, ViewMode } from "@/lib/manifold/types";
 import { cn } from "@/lib/utils";
+import { VisualGenome } from "./VisualGenome";
 
 export function Inspector({
   state,
@@ -18,6 +19,7 @@ export function Inspector({
 }) {
   const live = state.traits.filter((t) => !t.lost);
   const mind = getMind(state.installedMind);
+  const visual = state.provenance?.domain === "visual";
 
   return (
     <aside className="flex h-full min-h-0 flex-col bg-surface">
@@ -41,6 +43,8 @@ export function Inspector({
         </button>
       ) : null}
 
+      {visual ? <VisualGenome state={state} detailed={view === "LAB"} /> : null}
+
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {view === "PLAY" ? (
           <div className="space-y-4">
@@ -55,7 +59,11 @@ export function Inspector({
                 <p className="mt-2 text-sm leading-relaxed text-fg">{lastEvent.narrative}</p>
               </div>
             ) : (
-              <p className="text-sm text-muted">No travel yet. The pulse is still unnamed.</p>
+              <p className="text-sm text-muted">
+                {visual
+                  ? "No travel yet. This is generation zero extracted from the source prompt."
+                  : "No travel yet. The pulse is still unnamed."}
+              </p>
             )}
             {state.scars.length > 0 ? (
               <div>
@@ -95,7 +103,9 @@ export function Inspector({
               </div>
             ) : null}
             <div>
-              <p className="text-[10px] uppercase tracking-[0.16em] text-muted">Traits</p>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted">
+                {visual ? "All active traits · click lock to promote" : "Traits"}
+              </p>
               <ul className="mt-2 space-y-2">
                 {live.map((t) => (
                   <li
@@ -135,7 +145,7 @@ export function Inspector({
                 ))}
               </ul>
             </div>
-            {state.invariants.length ? (
+            {!visual && state.invariants.length ? (
               <div>
                 <p className="text-[10px] uppercase tracking-[0.16em] text-accent">Invariants</p>
                 <ul className="mt-2 space-y-1">
