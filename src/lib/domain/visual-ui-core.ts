@@ -1,4 +1,4 @@
-import type { OrganismState, Trait } from "../manifold/types.ts";
+import type { Concept, OrganismState, Trait } from "../manifold/types.ts";
 import type { VisualOutputKind } from "./visual-schema.ts";
 
 export type VisualStateSummary = {
@@ -18,6 +18,10 @@ function isAnchor(trait: Trait): boolean {
       trait.mutability <= 0.15 ||
       String(trait.jurisdiction) === "subject_identity",
   );
+}
+
+export function isVisualOperationalConcept(concept: Concept | undefined): boolean {
+  return concept?.family === "visual-transduced";
 }
 
 export function summarizeVisualState(state: OrganismState): VisualStateSummary {
