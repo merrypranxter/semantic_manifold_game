@@ -88,5 +88,27 @@ export function renderStyle(state: OrganismState): string {
     ],
   });
 
+  // Expansion-only clauses give the budget fitter several short, musically meaningful
+  // ways to finish a narrow Suno window without clipping prose or adding nonsense filler.
+  const live = state.traits.filter((trait) => !trait.lost && !trait.suppressed);
+  const first = live[0];
+  const second = live[1] ?? first;
+  fragments.push({
+    id: "budget-bridges",
+    text: "",
+    priority: 64,
+    expand: [
+      `Generation ${state.generation} must retain audible causal ancestry.`,
+      first ? `Keep ${first.name} legible under mutation.` : "Keep the active anchor legible under mutation.",
+      second ? `Expose pressure on ${second.name}; do not smooth it away.` : "Expose mutation pressure instead of smoothing it away.",
+      first ? `Let ${first.jurisdiction} negotiate without blending.` : "Let each jurisdiction negotiate without blending.",
+      second ? `Preserve the consequence of ${second.name}.` : "Preserve the consequence of every active rule.",
+      "Make every transition causally earned.",
+      "Keep mutation audible, not decorative.",
+      "Preserve jurisdictional independence.",
+      "Do not hide structural disagreement.",
+    ],
+  });
+
   return fitPromptBudget(fragments, STYLE_MIN, STYLE_MAX, " ");
 }
