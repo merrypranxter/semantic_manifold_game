@@ -10,10 +10,10 @@ import {
   unslotMindDelta,
 } from "./mind-engine";
 import { findMind, getMind } from "./minds";
-import { createOrigin } from "./origin";
 import { runOperator } from "./operators";
 import { parseCommand } from "./parser";
 import { applyDelta, hydrateOrganism, lockTrait as lockTraitOn } from "./reducer";
+import { chooseSessionOrigin, migratePersistedRun } from "./store-suno";
 import type {
   CommandProposal,
   LedgerEvent,
@@ -28,9 +28,8 @@ import { transduceConcept } from "@/lib/xai/transduce";
 const MAX_STATES = 28;
 const MAX_LEDGER = 48;
 
-/** In-session begin must survive a late persist rehydrate. */
-let sessionPulse: OrganismState | null = null;
-
+/** In-session begin must survive a late persist rehydrate without crossing seed lineages. */
+let sessionOrigin: OrganismState | null = null;
 
 type ManifoldStore = {
   saveVersion: number;
@@ -56,7 +55,7 @@ type ManifoldStore = {
   setDraft: (s: string) => void;
   setSelectedConcept: (id: string | null) => void;
   plant: (concept: Concept) => void;
-  begin: () => void;
+  begin: (seedId?: string) => void;
   reset: () => void;
   previewCommand: (raw?: string) => CommandProposal | null;
   execute: (proposal?: CommandProposal) => Promise<void>;
@@ -88,7 +87,7 @@ function emptyRun() {
     compileOpen: false,
     busy: false,
     error: null as string | null,
-    hint: "Begin as a pulse. Drift the field. Type a word. Go there.",
+    hint: "Choose a Suno genotype. The prompt starts alive before the first trip.",
     hydrated: false,
   };
 }
@@ -172,27 +171,28 @@ export const useManifold = create<ManifoldStore>()(
 
       concepts: () => allConcepts(get().customConcepts),
 
-      begin: () => {
-        const origin = sessionPulse ?? createOrigin();
-        sessionPulse = origin;
+      begin: (seedId = "productive-contradiction") => {
+        const origin = chooseSessionOrigin(seedId, sessionOrigin);
+        sessionOrigin = origin;
         set({
           started: true,
           currentId: origin.id,
-          states: { ...get().states, [origin.id]: origin },
+          states: { [origin.id]: origin },
           ledger: [],
           compile: null,
           compileOpen: false,
           pending: null,
           draft: "",
+          selectedConceptId: null,
           error: null,
-          hint: "Zoom in. Drag or WASD to drift. Find a word — any word — and go there.",
+          hint: `Generation zero: ${origin.name}. Pick a destination and make it mutate.`,
           view: "PLAY",
           metric: "SEMANTIC",
         });
       },
 
       reset: () => {
-        sessionPulse = null;
+        sessionOrigin = null;
         set({ ...emptyRun(), hydrated: true });
       },
 
@@ -240,7 +240,7 @@ export const useManifold = create<ManifoldStore>()(
         }
         const cur = get().current();
         if (!cur) {
-          set({ error: "Begin first." });
+          set({ error: "Choose a genotype first." });
           return;
         }
         set({ busy: true, error: null });
@@ -397,8 +397,8 @@ export const useManifold = create<ManifoldStore>()(
           currentId: stateId,
           compile: null,
           hint: mind
-            ? `Restored snapshot ${hydrated.name}. ${mind.label} is still thinking through it.`
-            : `Restored snapshot ${hydrated.name}. Undo is not travel; scars of later events remain in the ledger.`,
+            ? `Restored generation ${hydrated.generation}: ${hydrated.name}. ${mind.label} is still thinking through it.`
+            : `Restored generation ${hydrated.generation}: ${hydrated.name}.`,
         });
       },
 
@@ -415,7 +415,13 @@ export const useManifold = create<ManifoldStore>()(
       slotMind: (mindId) => {
         const mind = getMind(mindId);
         if (!mind) return;
-        if (!get().started) get().begin();
+        if (!get().started) {
+          set({
+            error: "Choose a genotype before slotting a Temporary Mind.",
+            hint: "The genotype is generation zero; choose it before installing a Mind.",
+          });
+          return;
+        }
         const proposal: CommandProposal = {
           raw: `install ${mind.label}`,
           operator: "KEEP_GOING",
@@ -454,25 +460,15 @@ export const useManifold = create<ManifoldStore>()(
       version: VERSION,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
-      migrate: (persisted) => {
-        try {
-          const p = persisted as Partial<ManifoldStore>;
-          const states: Record<string, OrganismState> = {};
-          for (const [id, s] of Object.entries(p.states ?? {})) {
-            if (s && typeof s === "object") states[id] = hydrateOrganism(s);
-          }
-          return { ...p, states, saveVersion: VERSION };
-        } catch {
-          return { saveVersion: VERSION };
-        }
-      },
+      migrate: (persisted, persistedVersion) =>
+        migratePersistedRun(persisted, persistedVersion) as Partial<ManifoldStore>,
       merge: (persistedState, currentState) => {
         const p = (persistedState ?? {}) as Partial<ManifoldStore>;
-        if (sessionPulse) {
-          const id = currentState.currentId ?? sessionPulse.id;
-          const states = currentState.states[sessionPulse.id]
+        if (sessionOrigin) {
+          const id = currentState.currentId ?? sessionOrigin.id;
+          const states = currentState.states[sessionOrigin.id]
             ? currentState.states
-            : { ...currentState.states, [sessionPulse.id]: sessionPulse };
+            : { ...currentState.states, [sessionOrigin.id]: sessionOrigin };
           return {
             ...currentState,
             started: true,
