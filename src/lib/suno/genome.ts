@@ -72,9 +72,10 @@ function geneStatus(state: OrganismState, trait: Trait): GeneStatus {
 }
 
 export function deriveSunoGenome(state: OrganismState): DerivedSunoGenome {
-  const byJurisdiction = Object.fromEntries(
-    JURISDICTIONS.map((jurisdiction) => [jurisdiction, []]),
-  ) as Record<Jurisdiction, DerivedGene[]>;
+  const byJurisdiction = {} as Record<Jurisdiction, DerivedGene[]>;
+  for (const jurisdiction of JURISDICTIONS) {
+    byJurisdiction[jurisdiction] = [];
+  }
 
   for (const original of state.traits) {
     const trait = { ...original };
