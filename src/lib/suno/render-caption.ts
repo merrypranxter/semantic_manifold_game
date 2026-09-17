@@ -23,6 +23,10 @@ export function renderCaption(state: OrganismState): string {
         "History stays causal.",
         "Nothing resets cleanly.",
         "The lineage matters.",
+        "Path acts.",
+        "Route acts.",
+        "Rules act.",
+        "Memory acts.",
       ],
     },
     {
@@ -66,6 +70,7 @@ export function renderCaption(state: OrganismState): string {
       expand: [
         "The loss stays structural.",
         "The scar remains active.",
+        "Scar acts.",
       ],
     });
   }
