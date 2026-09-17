@@ -8,34 +8,11 @@ import {
   jurisdictionsForOutput,
   type VisualOutputKind,
 } from "@/lib/domain/visual-schema";
+import {
+  sanitizeVisualTransductionInput,
+  type SanitizedVisualTransductionInput,
+} from "@/lib/domain/visual-request-core";
 import type { Trait } from "@/lib/manifold/types";
-
-type VisualTraitInput = Pick<
-  Trait,
-  | "name"
-  | "rule"
-  | "jurisdiction"
-  | "strength"
-  | "mutability"
-  | "locked"
-  | "lost"
-  | "suppressed"
->;
-
-type TransduceVisualInput = {
-  label: string;
-  output: VisualOutputKind;
-  organismName: string;
-  organismIdentity: string;
-  traits: VisualTraitInput[];
-  invariants: string[];
-  mind?: {
-    id: string;
-    full: string;
-    transduce: string;
-    procedure: string[];
-  };
-};
 
 type TransduceVisualOk = {
   ok: true;
@@ -53,7 +30,13 @@ function boundedVisualMaxTokens(): number {
   return Math.max(320, Math.min(720, Math.round(requested)));
 }
 
-function traitContext(traits: VisualTraitInput[]): string {
+function boundedVisualTimeoutMs(): number {
+  const requested = Number(process.env.XAI_VISUAL_TIMEOUT_MS ?? "12000");
+  if (!Number.isFinite(requested)) return 12_000;
+  return Math.max(4_000, Math.min(20_000, Math.round(requested)));
+}
+
+function traitContext(traits: SanitizedVisualTransductionInput["traits"]): string {
   return traits
     .filter((trait) => !trait.lost && !trait.suppressed)
     .sort((a, b) => Number(Boolean(a.locked)) - Number(Boolean(b.locked)))
@@ -67,27 +50,29 @@ function traitContext(traits: VisualTraitInput[]): string {
 }
 
 export const transduceVisualConcept = createServerFn({ method: "POST" })
-  .validator((input: TransduceVisualInput) => input)
+  .validator((input: unknown) => sanitizeVisualTransductionInput(input))
   .handler(
     async ({ data }): Promise<TransduceVisualOk | TransduceVisualErr> => {
-      const label = data.label.trim().slice(0, 120);
+      const label = data.label;
       if (!label) return { ok: false, error: "Visual transduction needs a concept." };
 
-      const output: VisualOutputKind = data.output === "video" ? "video" : "image";
-      const traits = data.traits.slice(0, 18) as Trait[];
-      const fallback = () => {
+      const output: VisualOutputKind = data.output;
+      const traits = data.traits as Trait[];
+      const fallback = (reason?: string) => {
         const result = fallbackVisualConcept(label, output, traits);
         return {
           ok: true as const,
           concept: result.concept,
           readings: result.readings,
-          warnings: result.warnings,
+          warnings: reason ? [...result.warnings, reason] : result.warnings,
           source: result.source,
         };
       };
 
       const apiKey = process.env.XAI_API_KEY;
-      if (!apiKey) return fallback();
+      if (!apiKey) {
+        return fallback("AI visual transducer unavailable; used deterministic local fallback.");
+      }
 
       const jurisdictions = jurisdictionsForOutput(output).join("|");
       const failureSurfaces = failureSurfacesForOutput(output)
@@ -98,14 +83,12 @@ export const transduceVisualConcept = createServerFn({ method: "POST" })
         )
         .join("\n");
       const invariants = data.invariants
-        .slice(0, 8)
-        .map((invariant) => `- ${invariant.slice(0, 180)}`)
+        .map((invariant) => `- ${invariant}`)
         .join("\n");
       const activeTraits = traitContext(data.traits);
       const mindBlock = data.mind
-        ? `\nTEMPORARY COGNITIVE INSTALLATION:\n${data.mind.full.slice(0, 160)}\n${data.mind.transduce.slice(0, 650)}\n${data.mind.procedure
-            .slice(0, 4)
-            .map((step, i) => `${i + 1}. ${step.slice(0, 180)}`)
+        ? `\nTEMPORARY COGNITIVE INSTALLATION:\n${data.mind.full}\n${data.mind.transduce}\n${data.mind.procedure
+            .map((step, i) => `${i + 1}. ${step}`)
             .join("\n")}\nTreat this as a hidden generative constraint; do not name it in donations.`
         : "";
 
@@ -129,8 +112,8 @@ ${failureSurfaces}
 Return compact JSON only.${mindBlock}`;
 
       const user = `Destination concept: ${label}
-Current organism: ${data.organismName.slice(0, 100)}
-Identity: ${data.organismIdentity.slice(0, 280)}
+Current organism: ${data.organismName}
+Identity: ${data.organismIdentity}
 
 Protected invariants:
 ${invariants || "(none explicit)"}
@@ -180,7 +163,7 @@ JSON shape:
             Authorization: `Bearer ${apiKey}`,
             "x-grok-conv-id": "semantic-manifold-visual-transducer-v1",
           },
-          signal: AbortSignal.timeout(12_000),
+          signal: AbortSignal.timeout(boundedVisualTimeoutMs()),
           body: JSON.stringify({
             model,
             messages: [
@@ -192,7 +175,11 @@ JSON shape:
             response_format: { type: "json_object" },
           }),
         });
-        if (!res.ok) return fallback();
+        if (!res.ok) {
+          return fallback(
+            `AI visual transducer returned HTTP ${res.status}; used deterministic local fallback without retrying.`,
+          );
+        }
 
         const body = (await res.json()) as {
           choices?: Array<{ message?: { content?: string } }>;
@@ -202,7 +189,9 @@ JSON shape:
         try {
           parsed = JSON.parse(text);
         } catch {
-          return fallback();
+          return fallback(
+            "AI visual transducer returned invalid JSON; used deterministic local fallback without retrying.",
+          );
         }
 
         const result = normalizeVisualConcept(
@@ -212,7 +201,11 @@ JSON shape:
           parsed,
           "ai",
         );
-        if (result.concept.donations.length === 0) return fallback();
+        if (result.concept.donations.length === 0) {
+          return fallback(
+            "AI visual transducer returned no usable donations; used deterministic local fallback without retrying.",
+          );
+        }
         return {
           ok: true,
           concept: result.concept,
@@ -221,7 +214,9 @@ JSON shape:
           source: result.source,
         };
       } catch {
-        return fallback();
+        return fallback(
+          "AI visual transducer request failed or timed out; used deterministic local fallback without retrying.",
+        );
       }
     },
   );
