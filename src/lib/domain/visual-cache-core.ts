@@ -1,9 +1,21 @@
 import type { OrganismState, Trait } from "../manifold/types.ts";
+import type { VisualDecompilation } from "./visual-decompiler-core.ts";
 import type { VisualOutputKind } from "./visual-schema.ts";
+import type { VisualTransductionResult } from "./visual-transducer-core.ts";
 
 export const VISUAL_AI_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const VISUAL_DECOMPILE_CACHE_LIMIT = 16;
 export const VISUAL_TRANSDUCTION_CACHE_LIMIT = 64;
+
+export type VisualDecompileCacheEntry = {
+  cachedAt: number;
+  decompiled: VisualDecompilation;
+};
+
+export type VisualTransductionCacheEntry = {
+  cachedAt: number;
+  result: VisualTransductionResult;
+};
 
 const DECOMPILE_CACHE_VERSION = "visual-decompile-v1";
 const TRANSDUCTION_CACHE_VERSION = "visual-transduction-v1";
@@ -95,7 +107,10 @@ export function pruneVisualCache<T extends { cachedAt: number }>(
   maxEntries = VISUAL_TRANSDUCTION_CACHE_LIMIT,
 ): Record<string, T> {
   const fresh = Object.entries(cache)
-    .filter(([, entry]) => now - entry.cachedAt <= maxAgeMs)
+    .filter(([, entry]) => {
+      const at = Number(entry?.cachedAt);
+      return Number.isFinite(at) && at <= now && now - at <= maxAgeMs;
+    })
     .sort((a, b) => b[1].cachedAt - a[1].cachedAt)
     .slice(0, Math.max(0, maxEntries));
   return Object.fromEntries(fresh);
@@ -109,6 +124,7 @@ export function freshVisualCacheEntry<T extends { cachedAt: number }>(
 ): T | undefined {
   const entry = cache[key];
   if (!entry) return undefined;
-  if (now - entry.cachedAt > maxAgeMs) return undefined;
+  const at = Number(entry.cachedAt);
+  if (!Number.isFinite(at) || at > now || now - at > maxAgeMs) return undefined;
   return entry;
 }
