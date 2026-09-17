@@ -34,6 +34,12 @@ function boundedMaxTokens(): number {
   return Math.max(512, Math.min(1400, Math.round(requested)));
 }
 
+function boundedTimeoutMs(): number {
+  const requested = Number(process.env.XAI_DECOMPILE_TIMEOUT_MS ?? "12000");
+  if (!Number.isFinite(requested)) return 12_000;
+  return Math.max(4_000, Math.min(20_000, Math.round(requested)));
+}
+
 function fallbackResult(
   rawPrompt: string,
   output: VisualOutputKind,
@@ -64,7 +70,11 @@ export const decompileVisualPrompt = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<VisualDecompileOk | VisualDecompileErr> => {
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) {
-      return fallbackResult(data.rawPrompt, data.output, "AI decompiler unavailable; used local operational parser.");
+      return fallbackResult(
+        data.rawPrompt,
+        data.output,
+        "AI decompiler unavailable; used local operational parser.",
+      );
     }
 
     const jurisdictions = jurisdictionsForOutput(data.output);
@@ -132,7 +142,7 @@ Prefer 4-12 clauses. Use fewer when the source is simple. Never create filler ju
           Authorization: `Bearer ${apiKey}`,
           "x-grok-conv-id": "semantic-manifold-visual-decompiler-v1",
         },
-        signal: AbortSignal.timeout(12_000),
+        signal: AbortSignal.timeout(boundedTimeoutMs()),
         body: JSON.stringify({
           model,
           messages: [
@@ -149,7 +159,7 @@ Prefer 4-12 clauses. Use fewer when the source is simple. Never create filler ju
         return fallbackResult(
           data.rawPrompt,
           data.output,
-          `AI decompiler returned HTTP ${res.status}; used local operational parser.`,
+          `AI decompiler returned HTTP ${res.status}; used local operational parser without retrying.`,
         );
       }
 
@@ -164,7 +174,7 @@ Prefer 4-12 clauses. Use fewer when the source is simple. Never create filler ju
         return fallbackResult(
           data.rawPrompt,
           data.output,
-          "AI decompiler returned invalid JSON; used local operational parser.",
+          "AI decompiler returned invalid JSON; used local operational parser without retrying.",
         );
       }
 
@@ -178,7 +188,7 @@ Prefer 4-12 clauses. Use fewer when the source is simple. Never create filler ju
         return fallbackResult(
           data.rawPrompt,
           data.output,
-          "AI decompiler returned no usable clauses; used local operational parser.",
+          "AI decompiler returned no usable clauses; used local operational parser without retrying.",
         );
       }
 
@@ -192,7 +202,7 @@ Prefer 4-12 clauses. Use fewer when the source is simple. Never create filler ju
       return fallbackResult(
         data.rawPrompt,
         data.output,
-        "AI decompiler request failed; used local operational parser.",
+        "AI decompiler request failed or timed out; used local operational parser without retrying.",
       );
     }
   });
