@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { retargetVisualOutput, summarizeVisualState } from "./visual-ui-core.ts";
-import type { OrganismState, Trait } from "../manifold/types.ts";
+import {
+  isVisualOperationalConcept,
+  retargetVisualOutput,
+  summarizeVisualState,
+} from "./visual-ui-core.ts";
+import type { Concept, OrganismState, Trait } from "../manifold/types.ts";
 
 function trait(
   id: string,
@@ -90,6 +94,32 @@ function specimen(): OrganismState {
   };
 }
 
+function concept(family: string): Concept {
+  return {
+    id: "molting",
+    label: "Molting",
+    aliases: ["molting"],
+    whatItDoes: "test",
+    clicheForbidden: [],
+    donations: [],
+    features: {
+      semanticX: 0,
+      semanticY: 0,
+      structure: 0.5,
+      failure: 0.5,
+      memory: 0.5,
+      temporal: 0.5,
+      topology: 0.5,
+      energy: 0.5,
+    },
+    failureMode: "test",
+    fracturePlane: "transformation_mechanism",
+    mass: 0.5,
+    seeded: false,
+    family,
+  };
+}
+
 test("retargeting image to video changes only the output lens", () => {
   const state = specimen();
   const before = JSON.stringify(state);
@@ -116,4 +146,10 @@ test("visual summary separates anchors, mutable laws, inactive laws, and invaria
   assert.equal(summary.outputKind, "image");
   assert.equal(summary.generation, 4);
   assert.equal(summary.ancestryDepth, 4);
+});
+
+test("only visual-transduced custom concepts may bypass visual transduction", () => {
+  assert.equal(isVisualOperationalConcept(concept("visual-transduced")), true);
+  assert.equal(isVisualOperationalConcept(concept("rare")), false);
+  assert.equal(isVisualOperationalConcept(undefined), false);
 });
