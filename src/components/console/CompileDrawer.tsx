@@ -1,8 +1,12 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { Check, Copy, X } from "lucide-react";
-import { useState } from "react";
+import { Check, Clapperboard, Copy, ImageIcon, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { DomainCompileOutput } from "@/lib/domain/types";
+import { compileVisual } from "@/lib/domain/visual-compiler";
+import type { VisualOutputKind } from "@/lib/domain/visual-schema";
+import { retargetVisualOutput } from "@/lib/domain/visual-ui-core";
+import { useManifold } from "@/lib/manifold/store";
 import { cn } from "@/lib/utils";
 
 export function CompileDrawer({
@@ -14,18 +18,36 @@ export function CompileDrawer({
   boxes: DomainCompileOutput | null;
   onClose: () => void;
 }) {
+  const domainId = useManifold((s) => s.domainId);
+  const currentId = useManifold((s) => s.currentId);
+  const states = useManifold((s) => s.states);
+  const state = currentId ? states[currentId] : undefined;
+  const nativeOutput: VisualOutputKind =
+    state?.provenance?.outputKind === "video" ? "video" : "image";
+  const [visualOutput, setVisualOutput] = useState<VisualOutputKind>(nativeOutput);
+
+  useEffect(() => {
+    if (open && domainId === "visual") setVisualOutput(nativeOutput);
+  }, [open, domainId, nativeOutput]);
+
+  const rendered = useMemo(() => {
+    if (domainId !== "visual" || !state) return boxes;
+    const lens = retargetVisualOutput(state, visualOutput);
+    return compileVisual(lens, visualOutput);
+  }, [boxes, domainId, state, visualOutput]);
+
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-bg/70 data-[state=open]:animate-in" />
-        <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[92dvh] overflow-y-auto rounded-t-2xl bg-surface p-4 shadow-[var(--shadow-border)] sm:inset-auto sm:bottom-6 sm:left-1/2 sm:w-[min(720px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:rounded-2xl sm:p-6">
+        <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[92dvh] overflow-y-auto rounded-t-2xl bg-surface p-4 shadow-[var(--shadow-border)] sm:inset-auto sm:bottom-6 sm:left-1/2 sm:w-[min(760px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:rounded-2xl sm:p-6">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <Dialog.Title className="font-display text-2xl italic text-fg">
-                {boxes?.title ?? "Compile"}
+                {rendered?.title ?? "Compile"}
               </Dialog.Title>
               <Dialog.Description className="mt-1 text-sm text-muted">
-                {boxes?.description ?? "Nothing to compile yet."}
+                {rendered?.description ?? "Nothing to compile yet."}
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
@@ -34,14 +56,40 @@ export function CompileDrawer({
               </Button>
             </Dialog.Close>
           </div>
-          {boxes ? (
+
+          {domainId === "visual" && state ? (
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-y border-border py-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-muted">Rendering lens</p>
+                <p className="mt-0.5 text-xs text-muted">Switch output without creating a new generation or changing ancestry.</p>
+              </div>
+              <div className="flex rounded-lg bg-bg p-1 shadow-[var(--shadow-border)]">
+                <LensButton
+                  active={visualOutput === "image"}
+                  onClick={() => setVisualOutput("image")}
+                  icon={<ImageIcon className="size-3.5" />}
+                >
+                  Image
+                </LensButton>
+                <LensButton
+                  active={visualOutput === "video"}
+                  onClick={() => setVisualOutput("video")}
+                  icon={<Clapperboard className="size-3.5" />}
+                >
+                  Video
+                </LensButton>
+              </div>
+            </div>
+          ) : null}
+
+          {rendered ? (
             <div className="space-y-4">
-              {boxes.warnings.map((w) => (
+              {rendered.warnings.map((w) => (
                 <p key={w} className="text-xs text-danger">
                   {w}
                 </p>
               ))}
-              {boxes.sections.map((section) => (
+              {rendered.sections.map((section) => (
                 <Box
                   key={section.id}
                   label={section.label}
@@ -57,6 +105,33 @@ export function CompileDrawer({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function LensButton({
+  active,
+  onClick,
+  icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "flex h-9 items-center gap-2 rounded-md px-3 text-xs transition-colors",
+        active ? "bg-accent text-accent-fg" : "text-muted hover:text-fg",
+      )}
+    >
+      {icon}
+      {children}
+    </button>
   );
 }
 
@@ -95,7 +170,7 @@ function Box({
           </Button>
         </div>
       </div>
-      <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-fg">
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-fg">
         {text}
       </pre>
     </section>
