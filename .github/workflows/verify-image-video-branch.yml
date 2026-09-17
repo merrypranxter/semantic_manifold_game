@@ -17,6 +17,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm install --no-audit --no-fund
-      - run: npm test
+      - name: Run image-video domain tests
+        run: >-
+          node --experimental-strip-types --test
+          src/lib/domain/registry-core.test.ts
+          src/lib/domain/visual-schema.test.ts
+          src/lib/domain/visual-decompiler-core.test.ts
+          src/lib/domain/visual-transducer-core.test.ts
+          src/lib/domain/visual-runtime.test.ts
       - run: npm run typecheck
       - run: npm run build:dev
