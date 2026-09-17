@@ -2,6 +2,7 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { searchConcepts, type Concept } from "@/lib/manifold/concepts";
 import { suggestRemoteWords, type RemoteWord } from "@/lib/datamuse/suggest";
+import { useManifold } from "@/lib/manifold/store";
 import { cn } from "@/lib/utils";
 
 export function WordFinder({
@@ -16,6 +17,7 @@ export function WordFinder({
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [remote, setRemote] = useState<RemoteWord[]>([]);
+  const domainId = useManifold((s) => s.domainId);
 
   const local = useMemo(() => searchConcepts(q, extra, 14), [q, extra]);
 
@@ -42,6 +44,23 @@ export function WordFinder({
     q.trim().length >= 2 &&
     !local.some((c) => c.label.toLowerCase() === q.trim().toLowerCase());
 
+  const chooseNovel = (label: string) => {
+    const clean = label.trim();
+    if (!clean) return;
+    if (domainId !== "visual") {
+      onNovel(clean);
+      return;
+    }
+
+    // Visual concepts must be transduced against the current specimen at travel
+    // time. Do not plant a generic lexicon donor into customConcepts first.
+    const next = `take this to ${clean}`;
+    const store = useManifold.getState();
+    store.setSelectedConcept(null);
+    store.setDraft(next);
+    store.previewCommand(next);
+  };
+
   return (
     <div className="relative min-w-0 flex-1 sm:max-w-xs">
       <label className="sr-only" htmlFor="word-finder">
@@ -66,13 +85,13 @@ export function WordFinder({
               setQ(first.label);
               setOpen(false);
             } else if (novel) {
-              onNovel(q.trim());
+              chooseNovel(q.trim());
               setOpen(false);
             }
           }
           if (e.key === "Escape") setOpen(false);
         }}
-        placeholder="Find a word — any word"
+        placeholder={domainId === "visual" ? "Find a destination — any concept" : "Find a word — any word"}
         className="h-9 w-full rounded-md bg-elevated pl-8 pr-3 font-mono text-xs text-fg shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-fg)_10%,transparent)] outline-none placeholder:text-muted/70 focus:shadow-[0_0_0_1px_var(--color-accent)]"
         autoCapitalize="off"
         autoComplete="off"
@@ -108,7 +127,7 @@ export function WordFinder({
                 className="flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left hover:bg-elevated"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  onNovel(w.word);
+                  chooseNovel(w.word);
                   setQ(w.word);
                   setOpen(false);
                 }}
@@ -127,11 +146,13 @@ export function WordFinder({
                 className="w-full px-3 py-2 text-left text-sm text-accent hover:bg-elevated"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  onNovel(q.trim());
+                  chooseNovel(q.trim());
                   setOpen(false);
                 }}
               >
-                Plant “{q.trim()}” as a region
+                {domainId === "visual"
+                  ? `Use “${q.trim()}” as a destination`
+                  : `Plant “${q.trim()}” as a region`}
               </button>
             </li>
           ) : null}
