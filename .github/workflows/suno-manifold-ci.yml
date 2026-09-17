@@ -20,7 +20,7 @@ jobs:
           cache: npm
       - run: npm install --no-audit --no-fund
       - name: Run Suno manifold tests
-        run: node --experimental-strip-types --test src/lib/suno/*.test.ts src/lib/manifold/*suno*.test.ts
+        run: npx --yes tsx@4.20.5 --test src/lib/suno/*.test.ts src/lib/manifold/*suno*.test.ts
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
