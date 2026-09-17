@@ -1,4 +1,5 @@
 import type { Concept } from "./concepts.ts";
+import { createOrigin } from "./origin.ts";
 import { hydrateOrganism } from "./reducer.ts";
 import type { LedgerEvent, MetricId, OrganismState, ViewMode } from "./types.ts";
 import { SAVE_VERSION } from "./types.ts";
@@ -14,6 +15,14 @@ export type PersistedRunShape = {
   customConcepts?: Concept[];
   hint?: string;
 };
+
+export function chooseSessionOrigin(
+  seedId: string,
+  current: OrganismState | null,
+): OrganismState {
+  if (current && current.seedId === seedId && current.generation === 0) return current;
+  return createOrigin(seedId);
+}
 
 function safeConcepts(value: unknown): Concept[] {
   if (!Array.isArray(value)) return [];
