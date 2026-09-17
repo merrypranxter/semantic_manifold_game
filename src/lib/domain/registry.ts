@@ -1,9 +1,11 @@
 import { musicProfile } from "./profiles/music.ts";
+import { visualProfile } from "./profiles/visual.ts";
 import { resolveDomainProfile, type DomainRegistry } from "./registry-core.ts";
 import type { DomainId, DomainProfile } from "./types.ts";
 
 const DOMAIN_REGISTRY: DomainRegistry = {
   music: musicProfile,
+  visual: visualProfile,
 };
 
 export function getDomainProfile(id: DomainId): DomainProfile {
