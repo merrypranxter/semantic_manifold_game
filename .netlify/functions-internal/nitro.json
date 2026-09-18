@@ -1,0 +1,15 @@
+{
+  "date": "2026-09-16T23:44:37.836Z",
+  "preset": "netlify",
+  "framework": {
+    "name": "nitro",
+    "version": "3.0.260610-beta"
+  },
+  "versions": {
+    "nitro": "3.0.260610-beta"
+  },
+  "serverEntry": "server/main.mjs",
+  "publicDir": "../../dist",
+  "commands": {},
+  "config": {}
+}
